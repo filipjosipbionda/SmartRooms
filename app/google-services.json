@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "227545851649",
+    "project_id": "classifyai-6a1da",
+    "storage_bucket": "classifyai-6a1da.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:227545851649:android:bca053029139c152431d00",
+        "android_client_info": {
+          "package_name": "com.benza.smartrooms"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDifh-fWDXGws0k48_WBXrf2KwIiAgHKTQ"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

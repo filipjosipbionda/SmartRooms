@@ -1,0 +1,14 @@
+package com.benza.smartrooms.data.room.model
+
+/**
+ * Minimal room model shown on the authenticated home screen.
+ */
+internal data class Room(
+    val id: String,
+    val name: String,
+    val topic: String,
+    val participantCount: Int,
+    val liveQuizCount: Int,
+    val ownerId: String,
+    val createdAtEpochMillis: Long
+)
