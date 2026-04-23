@@ -1,5 +1,6 @@
 # Android Studio / IntelliJ
 *.iml
+.idea/
 .idea/caches
 .idea/libraries
 .idea/modules.xml
@@ -10,8 +11,12 @@
 
 # Gradle
 .gradle/
+.gradle-local/
 build/
 **/build/
+
+# Firebase
+firebase-debug.log
 
 # Local machine config
 local.properties

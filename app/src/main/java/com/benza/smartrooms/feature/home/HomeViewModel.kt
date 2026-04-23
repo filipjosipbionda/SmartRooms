@@ -23,20 +23,27 @@ internal data class HomeRoomUiState(
     val name: String,
     val topic: String,
     val participantCount: Int,
-    val liveQuizCount: Int
+    val unansweredQuizCount: Int
 )
 
 /**
  * UI state for the authenticated home feature.
  */
 internal data class HomeUiState(
-    val userName: String = "",
-    val featuredRoomName: String = "",
+    val profileInitials: String = "?",
     val joinedRoomsCount: Int = 0,
-    val liveQuizCount: Int = 0,
+    val unansweredQuizCount: Int = 0,
     val rooms: List<HomeRoomUiState> = emptyList(),
+    val pagedRooms: List<HomeRoomUiState> = emptyList(),
     val isLoadingRooms: Boolean = true,
     val isCreatingRoom: Boolean = false,
+    val isCreateRoomDialogOpen: Boolean = false,
+    val currentPage: Int = 0,
+    val totalPages: Int = 0,
+    val roomNameInput: String = "",
+    val roomTopicInput: String = "",
+    val roomNameErrorRes: Int? = null,
+    val roomTopicErrorRes: Int? = null,
     val errorMessageRes: Int? = null,
     val infoMessageRes: Int? = null
 )
@@ -52,7 +59,7 @@ internal class HomeViewModel(
 
     private val _uiState = MutableStateFlow(
         HomeUiState(
-            userName = currentUser.displayNameOrEmailName(),
+            profileInitials = currentUser.toInitials(),
             isLoadingRooms = currentUser != null,
             errorMessageRes = if (currentUser == null) R.string.error_room_auth_required else null
         )
@@ -64,7 +71,64 @@ internal class HomeViewModel(
     }
 
     /**
-     * Creates a new Firestore room with an auto-generated name and topic.
+     * Opens the create-room dialog.
+     */
+    internal fun showCreateRoomDialog() {
+        _uiState.update {
+            it.copy(
+                isCreateRoomDialogOpen = true,
+                roomNameErrorRes = null,
+                roomTopicErrorRes = null,
+                errorMessageRes = null
+            )
+        }
+    }
+
+    /**
+     * Closes the create-room dialog and clears its transient validation state.
+     */
+    internal fun dismissCreateRoomDialog() {
+        if (_uiState.value.isCreatingRoom) return
+
+        _uiState.update {
+            it.copy(
+                isCreateRoomDialogOpen = false,
+                roomNameInput = "",
+                roomTopicInput = "",
+                roomNameErrorRes = null,
+                roomTopicErrorRes = null
+            )
+        }
+    }
+
+    /**
+     * Updates the pending room name input.
+     */
+    internal fun onRoomNameChanged(value: String) {
+        _uiState.update {
+            it.copy(
+                roomNameInput = value,
+                roomNameErrorRes = null,
+                errorMessageRes = null
+            )
+        }
+    }
+
+    /**
+     * Updates the pending room topic input.
+     */
+    internal fun onRoomTopicChanged(value: String) {
+        _uiState.update {
+            it.copy(
+                roomTopicInput = value,
+                roomTopicErrorRes = null,
+                errorMessageRes = null
+            )
+        }
+    }
+
+    /**
+     * Creates a new Firestore room from dialog input.
      */
     internal fun createRoom() {
         val user = currentUser ?: run {
@@ -73,8 +137,26 @@ internal class HomeViewModel(
         }
         if (_uiState.value.isCreatingRoom) return
 
-        val roomIndex = _uiState.value.rooms.size + 1
-        val roomDraft = buildRoomDraft(user, roomIndex)
+        val roomName = _uiState.value.roomNameInput.trim()
+        val roomTopic = _uiState.value.roomTopicInput.trim()
+        val roomNameError = if (roomName.isBlank()) R.string.error_room_name_required else null
+        val roomTopicError = if (roomTopic.isBlank()) R.string.error_room_topic_required else null
+
+        _uiState.update {
+            it.copy(
+                roomNameInput = roomName,
+                roomTopicInput = roomTopic,
+                roomNameErrorRes = roomNameError,
+                roomTopicErrorRes = roomTopicError,
+                errorMessageRes = if (roomNameError == null && roomTopicError == null) {
+                    null
+                } else {
+                    R.string.error_room_fix_fields
+                }
+            )
+        }
+
+        if (roomNameError != null || roomTopicError != null) return
 
         _uiState.update {
             it.copy(
@@ -90,8 +172,8 @@ internal class HomeViewModel(
                     CreateRoomRequest(
                         ownerId = user.uid,
                         ownerName = user.displayNameOrEmailName(),
-                        name = roomDraft.name,
-                        topic = roomDraft.topic
+                        name = roomName,
+                        topic = roomTopic
                     )
                 )
             ) {
@@ -99,6 +181,11 @@ internal class HomeViewModel(
                     _uiState.update {
                         it.copy(
                             isCreatingRoom = false,
+                            isCreateRoomDialogOpen = false,
+                            roomNameInput = "",
+                            roomTopicInput = "",
+                            roomNameErrorRes = null,
+                            roomTopicErrorRes = null,
                             infoMessageRes = R.string.home_room_created
                         )
                     }
@@ -117,10 +204,29 @@ internal class HomeViewModel(
     }
 
     /**
-     * Signs out the current user from Firebase Authentication.
+     * Moves the joined rooms list to the next page.
      */
-    internal fun logout() {
-        authRepository.signOut()
+    internal fun goToNextRoomsPage() {
+        _uiState.update { state ->
+            if (state.currentPage >= state.totalPages - 1) {
+                state
+            } else {
+                state.withPagination(currentPage = state.currentPage + 1)
+            }
+        }
+    }
+
+    /**
+     * Moves the joined rooms list to the previous page.
+     */
+    internal fun goToPreviousRoomsPage() {
+        _uiState.update { state ->
+            if (state.currentPage <= 0) {
+                state
+            } else {
+                state.withPagination(currentPage = state.currentPage - 1)
+            }
+        }
     }
 
     private fun observeRooms() {
@@ -136,10 +242,9 @@ internal class HomeViewModel(
                                 rooms = rooms,
                                 isLoadingRooms = false,
                                 joinedRoomsCount = rooms.size,
-                                liveQuizCount = rooms.sumOf(HomeRoomUiState::liveQuizCount),
-                                featuredRoomName = rooms.firstOrNull()?.name.orEmpty(),
+                                unansweredQuizCount = rooms.sumOf(HomeRoomUiState::unansweredQuizCount),
                                 errorMessageRes = null
-                            )
+                            ).withPagination(currentPage = it.currentPage)
                         }
                     }
 
@@ -155,24 +260,7 @@ internal class HomeViewModel(
             }
         }
     }
-
-    private fun buildRoomDraft(user: AuthUser, roomIndex: Int): RoomDraft {
-        val topic = ROOM_TOPICS[(roomIndex - 1) % ROOM_TOPICS.size]
-        val ownerName = user.displayNameOrEmailName()
-            .substringBefore(" ")
-            .ifBlank { "SmartRooms" }
-
-        return RoomDraft(
-            name = "$ownerName Room $roomIndex",
-            topic = topic
-        )
-    }
 }
-
-private data class RoomDraft(
-    val name: String,
-    val topic: String
-)
 
 private fun Room.toHomeRoomUiState(): HomeRoomUiState {
     return HomeRoomUiState(
@@ -180,7 +268,20 @@ private fun Room.toHomeRoomUiState(): HomeRoomUiState {
         name = name,
         topic = topic,
         participantCount = participantCount,
-        liveQuizCount = liveQuizCount
+        unansweredQuizCount = unansweredQuizCount
+    )
+}
+
+private fun HomeUiState.withPagination(currentPage: Int): HomeUiState {
+    val totalPages = if (rooms.isEmpty()) 0 else ((rooms.size - 1) / JOINED_ROOMS_PAGE_SIZE) + 1
+    val safePage = currentPage.coerceIn(0, (totalPages - 1).coerceAtLeast(0))
+    val startIndex = safePage * JOINED_ROOMS_PAGE_SIZE
+    val endIndex = (startIndex + JOINED_ROOMS_PAGE_SIZE).coerceAtMost(rooms.size)
+
+    return copy(
+        pagedRooms = rooms.subList(startIndex, endIndex),
+        currentPage = if (totalPages == 0) 0 else safePage,
+        totalPages = totalPages
     )
 }
 
@@ -190,10 +291,13 @@ private fun AuthUser?.displayNameOrEmailName(): String {
         ?: this?.email?.substringBefore("@").orEmpty()
 }
 
-private val ROOM_TOPICS = listOf(
-    "Kotlin",
-    "Firebase",
-    "Jetpack Compose",
-    "Databases",
-    "Algorithms"
-)
+private fun AuthUser?.toInitials(): String {
+    return displayNameOrEmailName()
+        .split(" ")
+        .filter(String::isNotBlank)
+        .take(2)
+        .joinToString("") { it.take(1).uppercase() }
+        .ifBlank { "?" }
+}
+
+private const val JOINED_ROOMS_PAGE_SIZE = 4

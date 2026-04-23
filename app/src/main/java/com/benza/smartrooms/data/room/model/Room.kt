@@ -8,7 +8,9 @@ internal data class Room(
     val name: String,
     val topic: String,
     val participantCount: Int,
-    val liveQuizCount: Int,
+    val unansweredQuizCount: Int,
     val ownerId: String,
+    val memberIds: List<String> = emptyList(),
+    val collaboratorIds: List<String> = emptyList(),
     val createdAtEpochMillis: Long
 )
