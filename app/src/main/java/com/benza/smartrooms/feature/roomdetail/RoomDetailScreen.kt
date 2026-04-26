@@ -15,11 +15,13 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.outlined.Campaign
+import androidx.compose.material.icons.outlined.PersonAdd
 import androidx.compose.material.icons.outlined.Quiz
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -47,6 +49,8 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.benza.smartrooms.R
 import com.benza.smartrooms.data.room.model.QuestionType
+import com.benza.smartrooms.data.room.model.RoomInvitationAccess
+import com.benza.smartrooms.data.userprofile.model.UserRole
 import com.benza.smartrooms.ui.components.AuthFeedbackBanner
 import com.benza.smartrooms.ui.components.AuthFeedbackType
 import com.benza.smartrooms.ui.theme.Coral
@@ -81,6 +85,10 @@ internal fun RoomDetailRouteScreen(
         onAnnouncementTitleChange = viewModel::onAnnouncementTitleChanged,
         onAnnouncementMessageChange = viewModel::onAnnouncementMessageChanged,
         onCreateAnnouncementClick = viewModel::createAnnouncement,
+        onShowInviteDialog = viewModel::showInviteDialog,
+        onDismissInviteDialog = viewModel::dismissInviteDialog,
+        onInviteSearchQueryChange = viewModel::onInviteSearchQueryChanged,
+        onSendInviteClick = viewModel::sendInvite,
         onInfoMessageShown = viewModel::consumeInfoMessage
     )
 }
@@ -95,6 +103,10 @@ internal fun RoomDetailScreen(
     onAnnouncementTitleChange: (String) -> Unit,
     onAnnouncementMessageChange: (String) -> Unit,
     onCreateAnnouncementClick: () -> Unit,
+    onShowInviteDialog: () -> Unit,
+    onDismissInviteDialog: () -> Unit,
+    onInviteSearchQueryChange: (String) -> Unit,
+    onSendInviteClick: (InviteUserUiState) -> Unit,
     onInfoMessageShown: () -> Unit
 ) {
     val snackbarHostState = remember { SnackbarHostState() }
@@ -130,7 +142,9 @@ internal fun RoomDetailScreen(
                     postCount = uiState.feedItems.count { it is RoomFeedItemUiState.Announcement },
                     quizCount = uiState.feedItems.count { it is RoomFeedItemUiState.Quiz },
                     onCreateAnnouncementClick = onShowCreateAnnouncementDialog,
-                    onOpenQuizzesClick = onOpenQuizzesClick
+                    onOpenQuizzesClick = onOpenQuizzesClick,
+                    onInviteClick = onShowInviteDialog,
+                    showInviteAction = uiState.isCurrentUserOwner
                 )
             }
             item {
@@ -160,6 +174,15 @@ internal fun RoomDetailScreen(
             onMessageChange = onAnnouncementMessageChange,
             onDismiss = onDismissCreateAnnouncementDialog,
             onConfirm = onCreateAnnouncementClick
+        )
+    }
+
+    if (uiState.isInviteDialogOpen) {
+        RoomInviteDialog(
+            uiState = uiState,
+            onSearchQueryChange = onInviteSearchQueryChange,
+            onSendInviteClick = onSendInviteClick,
+            onDismiss = onDismissInviteDialog
         )
     }
 }
@@ -203,7 +226,9 @@ private fun RoomSummaryCard(
     postCount: Int,
     quizCount: Int,
     onCreateAnnouncementClick: () -> Unit,
-    onOpenQuizzesClick: () -> Unit
+    onOpenQuizzesClick: () -> Unit,
+    onInviteClick: () -> Unit,
+    showInviteAction: Boolean
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -279,6 +304,20 @@ private fun RoomSummaryCard(
                         text = stringResource(R.string.action_open_quizzes),
                         maxLines = 1
                     )
+                }
+            }
+            if (showInviteAction) {
+                OutlinedButton(
+                    onClick = onInviteClick,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(
+                        imageVector = Icons.Outlined.PersonAdd,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.size(10.dp))
+                    Text(stringResource(R.string.action_invite_to_room))
                 }
             }
         }
@@ -598,6 +637,156 @@ private fun CreateAnnouncementDialog(
     )
 }
 
+@Composable
+private fun RoomInviteDialog(
+    uiState: RoomDetailUiState,
+    onSearchQueryChange: (String) -> Unit,
+    onSendInviteClick: (InviteUserUiState) -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.room_invite_dialog_title)) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(
+                    text = stringResource(R.string.room_invite_dialog_subtitle),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                OutlinedTextField(
+                    value = uiState.inviteSearchQuery,
+                    onValueChange = onSearchQueryChange,
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = !uiState.isSendingInvite,
+                    label = { Text(stringResource(R.string.label_user_search)) },
+                    singleLine = true
+                )
+                when {
+                    uiState.inviteSearchQuery.length < 2 -> {
+                        Text(
+                            text = stringResource(R.string.room_invite_search_hint),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+
+                    uiState.isSearchingInviteUsers -> {
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(18.dp),
+                                strokeWidth = 2.dp
+                            )
+                            Text(
+                                text = stringResource(R.string.room_invite_search_loading),
+                                style = MaterialTheme.typography.bodyMedium
+                            )
+                        }
+                    }
+
+                    uiState.inviteSearchResults.isEmpty() -> {
+                        Text(
+                            text = stringResource(R.string.room_invite_search_empty),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+
+                    else -> {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            uiState.inviteSearchResults.forEach { user ->
+                                InviteUserResultCard(
+                                    user = user,
+                                    isSendingInvite = uiState.isSendingInvite,
+                                    onSendInviteClick = { onSendInviteClick(user) }
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {},
+        dismissButton = {
+            TextButton(
+                onClick = onDismiss,
+                enabled = !uiState.isSendingInvite
+            ) {
+                Text(stringResource(R.string.action_cancel))
+            }
+        }
+    )
+}
+
+@Composable
+private fun InviteUserResultCard(
+    user: InviteUserUiState,
+    isSendingInvite: Boolean,
+    onSendInviteClick: () -> Unit
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.large,
+        color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.38f)
+    ) {
+        Row(
+            modifier = Modifier.padding(12.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = user.displayName,
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    text = user.email,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    text = stringResource(
+                        R.string.room_invite_access_summary,
+                        stringResource(user.roleLabelRes()),
+                        stringResource(user.accessLabelRes())
+                    ),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Button(
+                onClick = onSendInviteClick,
+                enabled = !isSendingInvite
+            ) {
+                Text(stringResource(R.string.action_send_invite))
+            }
+        }
+    }
+}
+
+private fun InviteUserUiState.roleLabelRes(): Int {
+    return when (role) {
+        UserRole.TEACHER -> R.string.profile_role_professor
+        UserRole.STUDENT -> R.string.profile_role_student
+        null -> R.string.profile_role_not_selected
+    }
+}
+
+private fun InviteUserUiState.accessLabelRes(): Int {
+    return when (access) {
+        RoomInvitationAccess.COLLABORATOR -> R.string.room_invite_access_collaborator
+        RoomInvitationAccess.MEMBER -> R.string.room_invite_access_member
+    }
+}
+
 private fun Long.toRoomDateLabel(): String {
     if (this <= 0L) return "--"
     return DateTimeFormatter.ofPattern("d MMM, HH:mm", Locale.ENGLISH)
@@ -639,6 +828,10 @@ private fun RoomDetailScreenPreview() {
             onAnnouncementTitleChange = {},
             onAnnouncementMessageChange = {},
             onCreateAnnouncementClick = {},
+            onShowInviteDialog = {},
+            onDismissInviteDialog = {},
+            onInviteSearchQueryChange = {},
+            onSendInviteClick = {},
             onInfoMessageShown = {}
         )
     }

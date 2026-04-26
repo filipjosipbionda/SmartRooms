@@ -10,6 +10,8 @@ import com.google.firebase.auth.FirebaseAuthInvalidCredentialsException
 import com.google.firebase.auth.FirebaseAuthInvalidUserException
 import com.google.firebase.auth.FirebaseAuthUserCollisionException
 import com.google.firebase.auth.FirebaseAuthWeakPasswordException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 /**
  * Firebase-backed implementation of [AuthRepository].
@@ -22,13 +24,15 @@ internal class FirebaseAuthRepository(
      * Signs in an existing Firebase user and maps the result to the app domain model.
      */
     override suspend fun login(email: String, password: String): AuthOperationResult<AuthUser> {
-        return runCatching {
-            authDataSource.signIn(email, password)?.toAuthUser()
-                ?: throw IllegalStateException("Firebase returned no user after sign in")
-        }.fold(
-            onSuccess = { AuthOperationResult.Success(it) },
-            onFailure = { AuthOperationResult.Error(it.toAuthErrorRes()) }
-        )
+        return withContext(Dispatchers.IO) {
+            runCatching {
+                authDataSource.signIn(email, password)?.toAuthUser()
+                    ?: throw IllegalStateException("Firebase returned no user after sign in")
+            }.fold(
+                onSuccess = { AuthOperationResult.Success(it) },
+                onFailure = { AuthOperationResult.Error(it.toAuthErrorRes()) }
+            )
+        }
     }
 
     /**
@@ -39,35 +43,39 @@ internal class FirebaseAuthRepository(
         email: String,
         password: String
     ): AuthOperationResult<AuthUser> {
-        return runCatching {
-            val user = authDataSource.register(email, password)
-                ?: throw IllegalStateException("Firebase returned no user after registration")
+        return withContext(Dispatchers.IO) {
             runCatching {
-                authDataSource.updateDisplayName(fullName)
-            }
-            authDataSource.currentUser()?.toAuthUser() ?: user.toAuthUser()
-        }.fold(
-            onSuccess = { AuthOperationResult.Success(it) },
-            onFailure = { AuthOperationResult.Error(it.toAuthErrorRes()) }
-        )
+                val user = authDataSource.register(email, password)
+                    ?: throw IllegalStateException("Firebase returned no user after registration")
+                runCatching {
+                    authDataSource.updateDisplayName(fullName)
+                }
+                authDataSource.currentUser()?.toAuthUser() ?: user.toAuthUser()
+            }.fold(
+                onSuccess = { AuthOperationResult.Success(it) },
+                onFailure = { AuthOperationResult.Error(it.toAuthErrorRes()) }
+            )
+        }
     }
 
     /**
      * Sends a password reset email. Unknown users are treated as success to avoid account leakage.
      */
     override suspend fun sendPasswordResetEmail(email: String): AuthOperationResult<Unit> {
-        return runCatching {
-            authDataSource.sendPasswordResetEmail(email)
-        }.fold(
-            onSuccess = { AuthOperationResult.Success(Unit) },
-            onFailure = { throwable ->
-                if (throwable is FirebaseAuthInvalidUserException) {
-                    AuthOperationResult.Success(Unit)
-                } else {
-                    AuthOperationResult.Error(throwable.toAuthErrorRes())
+        return withContext(Dispatchers.IO) {
+            runCatching {
+                authDataSource.sendPasswordResetEmail(email)
+            }.fold(
+                onSuccess = { AuthOperationResult.Success(Unit) },
+                onFailure = { throwable ->
+                    if (throwable is FirebaseAuthInvalidUserException) {
+                        AuthOperationResult.Success(Unit)
+                    } else {
+                        AuthOperationResult.Error(throwable.toAuthErrorRes())
+                    }
                 }
-            }
-        )
+            )
+        }
     }
 
     /**

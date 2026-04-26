@@ -11,6 +11,8 @@ import com.google.firebase.firestore.SetOptions
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.asExecutor
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.suspendCancellableCoroutine
@@ -35,16 +37,26 @@ internal class FirestoreUserProfileDataSource(
         }
 
         val profile = snapshot.toUserProfile(user)
-        document.set(
-            mapOf(
-                UID_FIELD to profile.uid,
-                EMAIL_FIELD to profile.email,
-                DISPLAY_NAME_FIELD to profile.displayName,
-                PROFILE_COMPLETE_FIELD to profile.profileComplete,
-                UPDATED_AT_FIELD to System.currentTimeMillis()
-            ),
-            SetOptions.merge()
-        ).await()
+        val missingProfileFields = buildMap<String, Any?> {
+            if (snapshot.getString(UID_FIELD).isNullOrBlank()) {
+                put(UID_FIELD, profile.uid)
+            }
+            if (snapshot.getString(EMAIL_FIELD).isNullOrBlank() && profile.email.isNotBlank()) {
+                put(EMAIL_FIELD, profile.email)
+            }
+            if (snapshot.getString(DISPLAY_NAME_FIELD).isNullOrBlank() && profile.displayName.isNotBlank()) {
+                put(DISPLAY_NAME_FIELD, profile.displayName)
+            }
+            if (!snapshot.contains(PROFILE_COMPLETE_FIELD)) {
+                put(PROFILE_COMPLETE_FIELD, profile.profileComplete)
+            }
+        }
+        if (missingProfileFields.isNotEmpty()) {
+            document.set(
+                missingProfileFields + (UPDATED_AT_FIELD to System.currentTimeMillis()),
+                SetOptions.merge()
+            ).await()
+        }
 
         return profile
     }
@@ -54,7 +66,7 @@ internal class FirestoreUserProfileDataSource(
      */
     internal fun observeProfile(user: AuthUser): Flow<UserProfile> = callbackFlow {
         val document = firestore.collection(USERS_COLLECTION).document(user.uid)
-        val registration = document.addSnapshotListener { snapshot, error ->
+        val registration = document.addSnapshotListener(FIRESTORE_CALLBACK_EXECUTOR) { snapshot, error ->
             if (error != null) {
                 close(error)
                 return@addSnapshotListener
@@ -70,6 +82,37 @@ internal class FirestoreUserProfileDataSource(
         }
 
         awaitClose { registration.remove() }
+    }
+
+    /**
+     * Searches existing profiles by display name or email.
+     */
+    internal suspend fun searchProfiles(query: String): List<UserProfile> {
+        val normalizedQuery = query.trim().lowercase()
+        if (normalizedQuery.length < MIN_SEARCH_QUERY_LENGTH) return emptyList()
+
+        return firestore.collection(USERS_COLLECTION)
+            .get()
+            .await()
+            .documents
+            .mapNotNull { snapshot ->
+                val fallbackUser = AuthUser(
+                    uid = snapshot.id,
+                    email = snapshot.getString(EMAIL_FIELD),
+                    displayName = snapshot.getString(DISPLAY_NAME_FIELD)
+                )
+                snapshot.toUserProfile(fallbackUser)
+            }
+            .filter { profile ->
+                profile.displayName.lowercase().contains(normalizedQuery) ||
+                    profile.email.lowercase().contains(normalizedQuery)
+            }
+            .sortedWith(
+                compareBy<UserProfile> { !it.email.lowercase().startsWith(normalizedQuery) }
+                    .thenBy { !it.displayName.lowercase().startsWith(normalizedQuery) }
+                    .thenBy { it.displayName.lowercase() }
+            )
+            .take(MAX_SEARCH_RESULTS)
     }
 
     /**
@@ -209,7 +252,7 @@ private fun String?.orEmailLocalPart(email: String?): String {
 
 private suspend fun <T> Task<T>.await(): T {
     return suspendCancellableCoroutine { continuation ->
-        addOnCompleteListener { task ->
+        addOnCompleteListener(FIREBASE_TASK_EXECUTOR) { task ->
             if (task.isSuccessful) {
                 continuation.resume(task.result)
             } else {
@@ -218,6 +261,9 @@ private suspend fun <T> Task<T>.await(): T {
         }
     }
 }
+
+private val FIRESTORE_CALLBACK_EXECUTOR = Dispatchers.IO.asExecutor()
+private val FIREBASE_TASK_EXECUTOR = Dispatchers.IO.asExecutor()
 
 private const val USERS_COLLECTION = "users"
 private const val TEACHER_REQUESTS_COLLECTION = "teacherRequests"
@@ -233,3 +279,5 @@ private const val CREATED_AT_FIELD = "createdAtEpochMillis"
 private const val UPDATED_AT_FIELD = "updatedAtEpochMillis"
 private const val TEACHER_ROLE = "teacher"
 private const val STUDENT_ROLE = "student"
+private const val MIN_SEARCH_QUERY_LENGTH = 2
+private const val MAX_SEARCH_RESULTS = 12

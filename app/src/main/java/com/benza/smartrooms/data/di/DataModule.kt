@@ -7,6 +7,7 @@ import com.benza.smartrooms.data.room.remote.FirebaseFunctionsRoomDataSource
 import com.benza.smartrooms.data.room.remote.FirestoreRoomDataSource
 import com.benza.smartrooms.data.room.repository.FirestoreRoomRepository
 import com.benza.smartrooms.data.room.repository.RoomRepository
+import com.benza.smartrooms.data.userprofile.remote.FirebaseFunctionsUserProfileDataSource
 import com.benza.smartrooms.data.userprofile.remote.FirestoreUserProfileDataSource
 import com.benza.smartrooms.data.userprofile.repository.FirestoreUserProfileRepository
 import com.benza.smartrooms.data.userprofile.repository.UserProfileRepository
@@ -26,8 +27,9 @@ internal val dataModule = module {
     single { FirestoreRoomDataSource(get()) }
     single { FirestoreUserProfileDataSource(get()) }
     single { FirebaseFunctionsRoomDataSource(get()) }
+    single { FirebaseFunctionsUserProfileDataSource(get()) }
     single<AuthRepository> { FirebaseAuthRepository(get()) }
-    single<UserProfileRepository> { FirestoreUserProfileRepository(get()) }
+    single<UserProfileRepository> { FirestoreUserProfileRepository(get(), get()) }
     single<RoomRepository> { FirestoreRoomRepository(get(), get()) }
 }
 

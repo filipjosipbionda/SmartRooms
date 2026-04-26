@@ -25,7 +25,7 @@ internal val viewModelModule = module {
     viewModelOf(::HomeViewModel)
     viewModelOf(::ProfileViewModel)
     viewModel { (roomId: String, roomName: String, roomTopic: String) ->
-        RoomDetailViewModel(roomId, roomName, roomTopic, get(), get())
+        RoomDetailViewModel(roomId, roomName, roomTopic, get(), get(), get())
     }
     viewModel { (roomId: String, roomName: String, roomTopic: String) ->
         RoomQuizBuilderViewModel(roomId, roomName, roomTopic, get())

@@ -8,12 +8,6 @@ import kotlinx.serialization.Serializable
 internal sealed interface SmartRoomsDestination
 
 /**
- * Type-safe destination for the bootstrap splash flow.
- */
-@Serializable
-internal data object SplashRoute : SmartRoomsDestination
-
-/**
  * Type-safe destination for the login flow.
  */
 @Serializable

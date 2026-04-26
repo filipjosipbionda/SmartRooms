@@ -1,10 +1,12 @@
 package com.benza.smartrooms.data.room.repository
 
 import com.benza.smartrooms.data.room.model.CreateAnnouncementRequest
+import com.benza.smartrooms.data.room.model.CreateRoomInvitationRequest
 import com.benza.smartrooms.data.room.model.CreateRoomRequest
 import com.benza.smartrooms.data.room.model.GenerateQuizRequest
 import com.benza.smartrooms.data.room.model.RoomAnnouncement
 import com.benza.smartrooms.data.room.model.Room
+import com.benza.smartrooms.data.room.model.RoomInvitation
 import com.benza.smartrooms.data.room.model.RoomOperationResult
 import com.benza.smartrooms.data.room.model.RoomQuizSummary
 import kotlinx.coroutines.flow.Flow
@@ -34,6 +36,16 @@ internal interface RoomRepository {
     fun observeCollaboratingRooms(userId: String): Flow<RoomOperationResult<List<Room>>>
 
     /**
+     * Observes a single room document.
+     */
+    fun observeRoom(roomId: String): Flow<RoomOperationResult<Room>>
+
+    /**
+     * Observes pending invitations for the supplied user.
+     */
+    fun observePendingRoomInvitations(userId: String): Flow<RoomOperationResult<List<RoomInvitation>>>
+
+    /**
      * Observes quizzes generated for a room.
      */
     fun observeQuizzes(roomId: String): Flow<RoomOperationResult<List<RoomQuizSummary>>>
@@ -52,6 +64,21 @@ internal interface RoomRepository {
      * Creates a new announcement document inside the supplied room.
      */
     suspend fun createAnnouncement(request: CreateAnnouncementRequest): RoomOperationResult<Unit>
+
+    /**
+     * Creates a pending room invitation for the selected user.
+     */
+    suspend fun createRoomInvitation(request: CreateRoomInvitationRequest): RoomOperationResult<Unit>
+
+    /**
+     * Accepts a pending invitation and joins the target room.
+     */
+    suspend fun acceptRoomInvitation(invitationId: String): RoomOperationResult<Unit>
+
+    /**
+     * Rejects a pending invitation.
+     */
+    suspend fun rejectRoomInvitation(invitationId: String): RoomOperationResult<Unit>
 
     /**
      * Triggers backend quiz generation for the supplied room.

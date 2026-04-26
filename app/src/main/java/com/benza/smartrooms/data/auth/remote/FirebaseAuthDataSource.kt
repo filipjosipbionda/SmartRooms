@@ -6,6 +6,8 @@ import com.google.firebase.auth.FirebaseUser
 import com.google.firebase.auth.UserProfileChangeRequest
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.asExecutor
 import kotlinx.coroutines.suspendCancellableCoroutine
 
 /**
@@ -64,7 +66,7 @@ internal class FirebaseAuthDataSource(
  */
 private suspend fun <T> Task<T>.await(): T {
     return suspendCancellableCoroutine { continuation ->
-        addOnCompleteListener { task ->
+        addOnCompleteListener(FIREBASE_TASK_EXECUTOR) { task ->
             if (task.isSuccessful) {
                 continuation.resume(task.result)
             } else {
@@ -73,3 +75,5 @@ private suspend fun <T> Task<T>.await(): T {
         }
     }
 }
+
+private val FIREBASE_TASK_EXECUTOR = Dispatchers.IO.asExecutor()

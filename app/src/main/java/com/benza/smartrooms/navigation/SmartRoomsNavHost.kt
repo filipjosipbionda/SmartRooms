@@ -1,12 +1,10 @@
 package com.benza.smartrooms.navigation
 
 import androidx.compose.runtime.Composable
-import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavHostController
 import androidx.navigation.toRoute
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
-import com.benza.smartrooms.feature.auth.authgate.SplashRouteScreen
 import com.benza.smartrooms.feature.auth.forgotpassword.ForgotPasswordRouteScreen
 import com.benza.smartrooms.feature.auth.login.LoginRouteScreen
 import com.benza.smartrooms.feature.auth.register.RegisterRouteScreen
@@ -22,64 +20,25 @@ import com.benza.smartrooms.feature.roomquizbuilder.RoomQuizBuilderRouteScreen
 @Composable
 internal fun SmartRoomsNavHost(
     navController: NavHostController,
-    startDestination: SmartRoomsDestination = SplashRoute
+    startDestination: SmartRoomsDestination,
+    onSessionResolvedRequired: () -> Unit
 ) {
     NavHost(
         navController = navController,
         startDestination = startDestination
     ) {
-        composable<SplashRoute> {
-            SplashRouteScreen(
-                onNavigateToLogin = {
-                    navController.navigate(LoginRoute) {
-                        popUpTo(SplashRoute) {
-                            inclusive = true
-                        }
-                    }
-                },
-                onNavigateToRoleSelection = {
-                    navController.navigate(RoleSelectionRoute) {
-                        popUpTo(SplashRoute) {
-                            inclusive = true
-                        }
-                    }
-                },
-                onNavigateToHome = {
-                    navController.navigate(HomeRoute) {
-                        popUpTo(SplashRoute) {
-                            inclusive = true
-                        }
-                    }
-                }
-            )
-        }
-
         composable<LoginRoute> {
             LoginRouteScreen(
                 onRegisterClick = { navController.navigate(RegisterRoute) },
                 onForgotPasswordClick = { navController.navigate(ForgotPasswordRoute) },
-                onLoginSuccess = {
-                    navController.navigate(SplashRoute) {
-                        popUpTo(navController.graph.findStartDestination().id) {
-                            inclusive = true
-                        }
-                        launchSingleTop = true
-                    }
-                }
+                onLoginSuccess = onSessionResolvedRequired
             )
         }
 
         composable<RegisterRoute> {
             RegisterRouteScreen(
                 onBackToLoginClick = { navController.popBackStack() },
-                onRegisterSuccess = {
-                    navController.navigate(SplashRoute) {
-                        popUpTo(navController.graph.findStartDestination().id) {
-                            inclusive = true
-                        }
-                        launchSingleTop = true
-                    }
-                }
+                onRegisterSuccess = onSessionResolvedRequired
             )
         }
 

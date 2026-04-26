@@ -4,7 +4,9 @@ import com.benza.smartrooms.data.room.model.CreateAnnouncementRequest
 import com.benza.smartrooms.data.room.model.CreateRoomRequest
 import com.benza.smartrooms.data.room.model.QuestionType
 import com.benza.smartrooms.data.room.model.RoomAnnouncement
+import com.benza.smartrooms.data.room.model.RoomInvitationAccess
 import com.benza.smartrooms.data.room.model.Room
+import com.benza.smartrooms.data.room.model.RoomInvitation
 import com.benza.smartrooms.data.room.model.RoomQuizSummary
 import com.google.android.gms.tasks.Task
 import com.google.firebase.firestore.DocumentSnapshot
@@ -13,6 +15,8 @@ import com.google.firebase.firestore.Query
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.asExecutor
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.suspendCancellableCoroutine
@@ -29,7 +33,7 @@ internal class FirestoreRoomDataSource(
     internal fun observeRooms(ownerId: String): Flow<List<Room>> = callbackFlow {
         val registration = firestore.collection(ROOMS_COLLECTION)
             .whereEqualTo(OWNER_ID_FIELD, ownerId)
-            .addSnapshotListener { snapshot, error ->
+            .addSnapshotListener(FIRESTORE_CALLBACK_EXECUTOR) { snapshot, error ->
                 if (error != null) {
                     close(error)
                     return@addSnapshotListener
@@ -46,12 +50,33 @@ internal class FirestoreRoomDataSource(
     }
 
     /**
+     * Observes a single room document.
+     */
+    internal fun observeRoom(roomId: String): Flow<Room> = callbackFlow {
+        val registration = firestore.collection(ROOMS_COLLECTION)
+            .document(roomId)
+            .addSnapshotListener(FIRESTORE_CALLBACK_EXECUTOR) { snapshot, error ->
+                if (error != null) {
+                    close(error)
+                    return@addSnapshotListener
+                }
+
+                val room = snapshot?.toRoom()
+                if (room != null) {
+                    trySend(room)
+                }
+            }
+
+        awaitClose { registration.remove() }
+    }
+
+    /**
      * Observes rooms where the supplied user is listed in memberIds.
      */
     internal fun observeMemberRooms(userId: String): Flow<List<Room>> = callbackFlow {
         val registration = firestore.collection(ROOMS_COLLECTION)
             .whereArrayContains(MEMBER_IDS_FIELD, userId)
-            .addSnapshotListener { snapshot, error ->
+            .addSnapshotListener(FIRESTORE_CALLBACK_EXECUTOR) { snapshot, error ->
                 if (error != null) {
                     close(error)
                     return@addSnapshotListener
@@ -73,7 +98,7 @@ internal class FirestoreRoomDataSource(
     internal fun observeCollaboratingRooms(userId: String): Flow<List<Room>> = callbackFlow {
         val registration = firestore.collection(ROOMS_COLLECTION)
             .whereArrayContains(COLLABORATOR_IDS_FIELD, userId)
-            .addSnapshotListener { snapshot, error ->
+            .addSnapshotListener(FIRESTORE_CALLBACK_EXECUTOR) { snapshot, error ->
                 if (error != null) {
                     close(error)
                     return@addSnapshotListener
@@ -90,6 +115,30 @@ internal class FirestoreRoomDataSource(
     }
 
     /**
+     * Observes pending invitations for the supplied user.
+     */
+    internal fun observePendingRoomInvitations(userId: String): Flow<List<RoomInvitation>> = callbackFlow {
+        val registration = firestore.collection(USERS_COLLECTION)
+            .document(userId)
+            .collection(ROOM_INVITATIONS_COLLECTION)
+            .whereEqualTo(INVITATION_STATUS_FIELD, PENDING_INVITATION_STATUS)
+            .addSnapshotListener(FIRESTORE_CALLBACK_EXECUTOR) { snapshot, error ->
+                if (error != null) {
+                    close(error)
+                    return@addSnapshotListener
+                }
+
+                val invitations = snapshot?.documents.orEmpty()
+                    .mapNotNull(DocumentSnapshot::toRoomInvitation)
+                    .sortedByDescending(RoomInvitation::createdAtEpochMillis)
+
+                trySend(invitations)
+            }
+
+        awaitClose { registration.remove() }
+    }
+
+    /**
      * Observes generated quizzes inside the supplied room.
      */
     internal fun observeQuizzes(roomId: String): Flow<List<RoomQuizSummary>> = callbackFlow {
@@ -97,7 +146,7 @@ internal class FirestoreRoomDataSource(
             .document(roomId)
             .collection(QUIZZES_COLLECTION)
             .orderBy(QUIZ_CREATED_AT_FIELD, Query.Direction.DESCENDING)
-            .addSnapshotListener { snapshot, error ->
+            .addSnapshotListener(FIRESTORE_CALLBACK_EXECUTOR) { snapshot, error ->
                 if (error != null) {
                     close(error)
                     return@addSnapshotListener
@@ -120,7 +169,7 @@ internal class FirestoreRoomDataSource(
             .document(roomId)
             .collection(ANNOUNCEMENTS_COLLECTION)
             .orderBy(ANNOUNCEMENT_CREATED_AT_EPOCH_FIELD, Query.Direction.DESCENDING)
-            .addSnapshotListener { snapshot, error ->
+            .addSnapshotListener(FIRESTORE_CALLBACK_EXECUTOR) { snapshot, error ->
                 if (error != null) {
                     close(error)
                     return@addSnapshotListener
@@ -178,6 +227,7 @@ internal class FirestoreRoomDataSource(
             )
         ).await()
     }
+
 }
 
 private fun DocumentSnapshot.toQuizSummary(): RoomQuizSummary? {
@@ -216,10 +266,30 @@ private fun DocumentSnapshot.toAnnouncement(): RoomAnnouncement? {
     )
 }
 
+private fun DocumentSnapshot.toRoomInvitation(): RoomInvitation? {
+    val roomId = getString(ROOM_ID_FIELD) ?: return null
+
+    return RoomInvitation(
+        id = id,
+        roomId = roomId,
+        roomName = getString(ROOM_NAME_FIELD).orEmpty().ifBlank { DEFAULT_ROOM_NAME },
+        inviterName = getString(INVITER_NAME_FIELD).orEmpty().ifBlank { DEFAULT_INVITER_NAME },
+        access = getString(INVITATION_ACCESS_FIELD).toRoomInvitationAccess(),
+        createdAtEpochMillis = getLong(CREATED_AT_FIELD) ?: 0L
+    )
+}
+
 private fun String?.toQuestionType(): QuestionType {
     return when (this) {
         "fill_in_blank" -> QuestionType.FILL_IN_BLANK
         else -> QuestionType.MULTIPLE_CHOICE
+    }
+}
+
+private fun String?.toRoomInvitationAccess(): RoomInvitationAccess {
+    return when (this) {
+        "collaborator" -> RoomInvitationAccess.COLLABORATOR
+        else -> RoomInvitationAccess.MEMBER
     }
 }
 
@@ -252,7 +322,7 @@ private fun DocumentSnapshot.getStringList(field: String): List<String> {
 
 private suspend fun <T> Task<T>.await(): T {
     return suspendCancellableCoroutine { continuation ->
-        addOnCompleteListener { task ->
+        addOnCompleteListener(FIREBASE_TASK_EXECUTOR) { task ->
             if (task.isSuccessful) {
                 continuation.resume(task.result)
             } else {
@@ -262,10 +332,17 @@ private suspend fun <T> Task<T>.await(): T {
     }
 }
 
+private val FIRESTORE_CALLBACK_EXECUTOR = Dispatchers.IO.asExecutor()
+private val FIREBASE_TASK_EXECUTOR = Dispatchers.IO.asExecutor()
+
+private const val USERS_COLLECTION = "users"
 private const val ROOMS_COLLECTION = "rooms"
+private const val ROOM_INVITATIONS_COLLECTION = "roomInvitations"
 private const val QUIZZES_COLLECTION = "quizzes"
 private const val ANNOUNCEMENTS_COLLECTION = "announcements"
 private const val ID_FIELD = "id"
+private const val ROOM_ID_FIELD = "roomId"
+private const val ROOM_NAME_FIELD = "roomName"
 private const val NAME_FIELD = "name"
 private const val TOPIC_FIELD = "topic"
 private const val PARTICIPANT_COUNT_FIELD = "participantCount"
@@ -275,10 +352,21 @@ private const val OWNER_ID_FIELD = "ownerId"
 private const val OWNER_NAME_FIELD = "ownerName"
 private const val MEMBER_IDS_FIELD = "memberIds"
 private const val COLLABORATOR_IDS_FIELD = "collaboratorIds"
+private const val INVITER_ID_FIELD = "inviterId"
+private const val INVITER_NAME_FIELD = "inviterName"
+private const val INVITEE_ID_FIELD = "inviteeId"
+private const val INVITEE_EMAIL_FIELD = "inviteeEmail"
+private const val INVITEE_DISPLAY_NAME_FIELD = "inviteeDisplayName"
+private const val INVITATION_ACCESS_FIELD = "access"
+private const val INVITATION_STATUS_FIELD = "status"
+private const val PENDING_INVITATION_STATUS = "pending"
 private const val CREATED_AT_FIELD = "createdAtEpochMillis"
+private const val UPDATED_AT_FIELD = "updatedAtEpochMillis"
 private const val QUIZ_CREATED_AT_FIELD = "createdAt"
 private const val QUIZ_CREATED_AT_EPOCH_FIELD = "createdAtEpochMillis"
 private const val DEFAULT_TOPIC = "AI"
+private const val DEFAULT_ROOM_NAME = "Untitled room"
+private const val DEFAULT_INVITER_NAME = "Room owner"
 private const val DEFAULT_CEFR_LEVEL = "B1"
 private const val QUIZ_TITLE_FIELD = "title"
 private const val CEFR_LEVEL_FIELD = "cefrLevel"
