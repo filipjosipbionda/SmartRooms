@@ -40,58 +40,62 @@ internal fun AuthScaffold(
     title: String,
     subtitle: String,
     modifier: Modifier = Modifier,
-    content: @Composable () -> Unit
+    content: @Composable () -> Unit,
 ) {
     Box(
-        modifier = modifier
-            .fillMaxSize()
-            .background(
-                brush = Brush.verticalGradient(
-                    colors = listOf(Night, Lagoon, Coral)
-                )
-            )
-            .statusBarsPadding()
-            .navigationBarsPadding()
-            .imePadding()
-            .padding(horizontal = 20.dp)
+        modifier =
+            modifier
+                .fillMaxSize()
+                .background(
+                    brush =
+                        Brush.verticalGradient(
+                            colors = listOf(Night, Lagoon, Coral),
+                        ),
+                ).statusBarsPadding()
+                .navigationBarsPadding()
+                .imePadding()
+                .padding(horizontal = 20.dp),
     ) {
         Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .verticalScroll(rememberScrollState()),
-            verticalArrangement = Arrangement.Center
+            modifier =
+                Modifier
+                    .fillMaxSize()
+                    .verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.Center,
         ) {
             Text(
                 text = stringResource(R.string.app_name),
                 style = MaterialTheme.typography.labelLarge,
-                color = Ivory.copy(alpha = 0.9f)
+                color = Ivory.copy(alpha = 0.9f),
             )
             Spacer(modifier = Modifier.height(10.dp))
             Text(
                 text = title,
                 style = MaterialTheme.typography.headlineLarge,
                 fontWeight = FontWeight.SemiBold,
-                color = Color.White
+                color = Color.White,
             )
             Spacer(modifier = Modifier.height(8.dp))
             Text(
                 text = subtitle,
                 style = MaterialTheme.typography.bodyLarge,
-                color = Ivory.copy(alpha = 0.88f)
+                color = Ivory.copy(alpha = 0.88f),
             )
             Spacer(modifier = Modifier.height(24.dp))
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(28.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.98f)
-                ),
-                elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
+                colors =
+                    CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.98f),
+                    ),
+                elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
             ) {
                 Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(24.dp)
+                    modifier =
+                        Modifier
+                            .fillMaxWidth()
+                            .padding(24.dp),
                 ) {
                     content()
                 }

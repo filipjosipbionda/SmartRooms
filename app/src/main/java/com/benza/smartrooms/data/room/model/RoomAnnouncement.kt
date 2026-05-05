@@ -8,5 +8,5 @@ internal data class RoomAnnouncement(
     val title: String,
     val message: String,
     val authorName: String,
-    val createdAtEpochMillis: Long
+    val createdAtEpochMillis: Long,
 )

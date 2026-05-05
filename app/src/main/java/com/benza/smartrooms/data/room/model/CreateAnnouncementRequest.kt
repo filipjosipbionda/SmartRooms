@@ -8,5 +8,5 @@ internal data class CreateAnnouncementRequest(
     val authorId: String,
     val authorName: String,
     val title: String,
-    val message: String
+    val message: String,
 )

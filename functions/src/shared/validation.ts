@@ -1,12 +1,15 @@
 import { HttpsError } from "firebase-functions/v2/https";
 import {
-  ALLOWED_QUESTION_COUNTS,
   CEFR_LEVELS,
-  DEFAULT_CEFR_LEVEL,
-  DEFAULT_QUESTION_COUNT
+  DEFAULT_QUESTION_COUNT,
+  MAX_QUESTION_COUNT,
+  MAX_QUESTION_TIME_LIMIT_SECONDS,
+  MIN_QUESTION_COUNT,
+  MIN_QUESTION_TIME_LIMIT_SECONDS
 } from "./config.js";
 import {
   CefrLevel,
+  QuizKind,
   QuestionType,
   TeacherApprovalStatus,
   TeacherRequestStatus
@@ -28,7 +31,7 @@ export function readOptionalString(value: unknown): string | undefined {
 
 export function normalizeCefrLevel(value: unknown): CefrLevel {
   if (typeof value !== "string") {
-    return DEFAULT_CEFR_LEVEL;
+    throw new HttpsError("invalid-argument", "cefrLevel is required.");
   }
 
   const normalized = value.trim().toUpperCase() as CefrLevel;
@@ -36,23 +39,75 @@ export function normalizeCefrLevel(value: unknown): CefrLevel {
     return normalized;
   }
 
-  return DEFAULT_CEFR_LEVEL;
+  throw new HttpsError("invalid-argument", "cefrLevel must be one of A1, A2, B1, B2, C1, or C2.");
 }
 
 export function normalizeQuestionCount(value: unknown): number {
-  if (typeof value !== "number" || !Number.isInteger(value)) {
+  if (value == null) {
     return DEFAULT_QUESTION_COUNT;
   }
 
-  if (ALLOWED_QUESTION_COUNTS.includes(value as 5 | 10 | 15)) {
+  if (typeof value !== "number" || !Number.isInteger(value)) {
+    throw new HttpsError("invalid-argument", "questionCount must be a whole number.");
+  }
+
+  if (value >= MIN_QUESTION_COUNT && value <= MAX_QUESTION_COUNT) {
     return value;
   }
 
-  return DEFAULT_QUESTION_COUNT;
+  throw new HttpsError(
+    "invalid-argument",
+    `questionCount must be between ${MIN_QUESTION_COUNT} and ${MAX_QUESTION_COUNT}.`
+  );
 }
 
 export function normalizeQuestionType(value: unknown): QuestionType {
-  return value === "fill_in_blank" ? "fill_in_blank" : "multiple_choice";
+  if (value === "fill_in_blank") {
+    return "fill_in_blank";
+  }
+  if (value === "word_scramble") {
+    return "word_scramble";
+  }
+  return "multiple_choice";
+}
+
+export function normalizeQuestionTimeLimitSeconds(value: unknown): number | null {
+  if (value == null) {
+    return null;
+  }
+
+  if (typeof value !== "number" || !Number.isInteger(value)) {
+    throw new HttpsError("invalid-argument", "questionTimeLimitSeconds must be a whole number.");
+  }
+
+  if (value >= MIN_QUESTION_TIME_LIMIT_SECONDS && value <= MAX_QUESTION_TIME_LIMIT_SECONDS) {
+    return value;
+  }
+
+  throw new HttpsError(
+    "invalid-argument",
+    `questionTimeLimitSeconds must be between ${MIN_QUESTION_TIME_LIMIT_SECONDS} and ${MAX_QUESTION_TIME_LIMIT_SECONDS}.`
+  );
+}
+
+export function normalizeQuizKind(value: unknown): QuizKind {
+  return value === "vocabulary" ? "vocabulary" : "grammar";
+}
+
+export function readStringList(value: unknown, fieldName: string): string[] {
+  if (!Array.isArray(value)) {
+    throw new HttpsError("invalid-argument", `${fieldName} must be an array of strings.`);
+  }
+
+  const values = value
+    .map((item) => typeof item === "string" ? item.trim() : "")
+    .filter((item) => item.length > 0);
+
+  if (values.length === 0) {
+    throw new HttpsError("invalid-argument", `${fieldName} must contain at least one value.`);
+  }
+
+  return values;
 }
 
 export function normalizeTeacherRequestStatus(value: unknown): TeacherRequestStatus {

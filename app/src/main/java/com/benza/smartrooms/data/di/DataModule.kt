@@ -19,18 +19,19 @@ import org.koin.dsl.module
 /**
  * Data-layer dependency graph for auth SDK objects and repositories.
  */
-internal val dataModule = module {
-    single { FirebaseAuth.getInstance() }
-    single { FirebaseFirestore.getInstance() }
-    single { FirebaseFunctions.getInstance(FUNCTIONS_REGION) }
-    single { FirebaseAuthDataSource(get()) }
-    single { FirestoreRoomDataSource(get()) }
-    single { FirestoreUserProfileDataSource(get()) }
-    single { FirebaseFunctionsRoomDataSource(get()) }
-    single { FirebaseFunctionsUserProfileDataSource(get()) }
-    single<AuthRepository> { FirebaseAuthRepository(get()) }
-    single<UserProfileRepository> { FirestoreUserProfileRepository(get(), get()) }
-    single<RoomRepository> { FirestoreRoomRepository(get(), get()) }
-}
+internal val dataModule =
+    module {
+        single { FirebaseAuth.getInstance() }
+        single { FirebaseFirestore.getInstance() }
+        single { FirebaseFunctions.getInstance(FUNCTIONS_REGION) }
+        single { FirebaseAuthDataSource(get()) }
+        single { FirestoreRoomDataSource(get()) }
+        single { FirestoreUserProfileDataSource(get()) }
+        single { FirebaseFunctionsRoomDataSource(get()) }
+        single { FirebaseFunctionsUserProfileDataSource(get()) }
+        single<AuthRepository> { FirebaseAuthRepository(get()) }
+        single<UserProfileRepository> { FirestoreUserProfileRepository(get(), get()) }
+        single<RoomRepository> { FirestoreRoomRepository(get(), get()) }
+    }
 
 private const val FUNCTIONS_REGION = "europe-west3"

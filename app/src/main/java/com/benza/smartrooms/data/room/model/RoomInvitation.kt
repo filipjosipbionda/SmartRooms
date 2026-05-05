@@ -9,5 +9,5 @@ internal data class RoomInvitation(
     val roomName: String,
     val inviterName: String,
     val access: RoomInvitationAccess,
-    val createdAtEpochMillis: Long
+    val createdAtEpochMillis: Long,
 )

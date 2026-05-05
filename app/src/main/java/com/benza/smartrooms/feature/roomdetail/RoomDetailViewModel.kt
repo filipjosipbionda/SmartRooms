@@ -11,18 +11,19 @@ import com.benza.smartrooms.data.room.model.QuestionType
 import com.benza.smartrooms.data.room.model.RoomAnnouncement
 import com.benza.smartrooms.data.room.model.RoomInvitationAccess
 import com.benza.smartrooms.data.room.model.RoomOperationResult
+import com.benza.smartrooms.data.room.model.RoomQuizStatus
 import com.benza.smartrooms.data.room.model.RoomQuizSummary
 import com.benza.smartrooms.data.room.repository.RoomRepository
 import com.benza.smartrooms.data.userprofile.model.UserProfile
 import com.benza.smartrooms.data.userprofile.model.UserProfileOperationResult
 import com.benza.smartrooms.data.userprofile.model.UserRole
 import com.benza.smartrooms.data.userprofile.repository.UserProfileRepository
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.update
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 
 internal sealed interface RoomFeedItemUiState {
@@ -34,16 +35,18 @@ internal sealed interface RoomFeedItemUiState {
         override val createdAtEpochMillis: Long,
         val title: String,
         val message: String,
-        val authorName: String
+        val authorName: String,
     ) : RoomFeedItemUiState
 
     data class Quiz(
         override val id: String,
         override val createdAtEpochMillis: Long,
         val title: String,
+        val topic: String,
         val cefrLevel: String,
+        val status: RoomQuizStatus,
         val questionTypeLabelRes: Int,
-        val questionCount: Int
+        val questionCount: Int,
     ) : RoomFeedItemUiState
 }
 
@@ -51,7 +54,7 @@ internal data class RoomDetailUiState(
     val roomId: String,
     val roomName: String,
     val roomTopic: String,
-    val cefrLevel: String = DEFAULT_CEFR_LEVEL,
+    val cefrLevel: String = "",
     val ownerId: String = "",
     val memberIds: List<String> = emptyList(),
     val collaboratorIds: List<String> = emptyList(),
@@ -70,7 +73,7 @@ internal data class RoomDetailUiState(
     val announcementTitleErrorRes: Int? = null,
     val announcementMessageErrorRes: Int? = null,
     val errorMessageRes: Int? = null,
-    val infoMessageRes: Int? = null
+    val infoMessageRes: Int? = null,
 )
 
 internal data class InviteUserUiState(
@@ -78,7 +81,7 @@ internal data class InviteUserUiState(
     val displayName: String,
     val email: String,
     val role: UserRole?,
-    val access: RoomInvitationAccess
+    val access: RoomInvitationAccess,
 )
 
 internal class RoomDetailViewModel(
@@ -87,19 +90,20 @@ internal class RoomDetailViewModel(
     roomTopic: String,
     private val roomRepository: RoomRepository,
     private val authRepository: AuthRepository,
-    private val userProfileRepository: UserProfileRepository
+    private val userProfileRepository: UserProfileRepository,
 ) : ViewModel() {
     private val currentUser = authRepository.getCurrentUser()
     private var inviteSearchJob: Job? = null
 
-    private val _uiState = MutableStateFlow(
-        RoomDetailUiState(
-            roomId = roomId,
-            roomName = roomName,
-            roomTopic = roomTopic
+    private val _uiState =
+        MutableStateFlow(
+            RoomDetailUiState(
+                roomId = roomId,
+                roomName = roomName,
+                roomTopic = roomTopic,
+            ),
         )
-    )
-    internal val uiState: StateFlow<RoomDetailUiState> = _uiState.asStateFlow()
+    val uiState: StateFlow<RoomDetailUiState> = _uiState.asStateFlow()
 
     init {
         observeRoom()
@@ -116,7 +120,7 @@ internal class RoomDetailViewModel(
                 isCreateAnnouncementDialogOpen = true,
                 announcementTitleErrorRes = null,
                 announcementMessageErrorRes = null,
-                errorMessageRes = null
+                errorMessageRes = null,
             )
         }
     }
@@ -130,7 +134,7 @@ internal class RoomDetailViewModel(
                 inviteSearchQuery = "",
                 inviteSearchResults = emptyList(),
                 isSearchingInviteUsers = false,
-                errorMessageRes = null
+                errorMessageRes = null,
             )
         }
     }
@@ -144,7 +148,7 @@ internal class RoomDetailViewModel(
                 isInviteDialogOpen = false,
                 inviteSearchQuery = "",
                 inviteSearchResults = emptyList(),
-                isSearchingInviteUsers = false
+                isSearchingInviteUsers = false,
             )
         }
     }
@@ -156,9 +160,16 @@ internal class RoomDetailViewModel(
         _uiState.update {
             it.copy(
                 inviteSearchQuery = query,
-                inviteSearchResults = if (query.length < MIN_INVITE_SEARCH_QUERY_LENGTH) emptyList() else it.inviteSearchResults,
+                inviteSearchResults =
+                    if (query.length <
+                        MIN_INVITE_SEARCH_QUERY_LENGTH
+                    ) {
+                        emptyList()
+                    } else {
+                        it.inviteSearchResults
+                    },
                 isSearchingInviteUsers = query.length >= MIN_INVITE_SEARCH_QUERY_LENGTH,
-                errorMessageRes = null
+                errorMessageRes = null,
             )
         }
 
@@ -167,37 +178,40 @@ internal class RoomDetailViewModel(
             return
         }
 
-        inviteSearchJob = viewModelScope.launch {
-            when (val result = userProfileRepository.searchProfiles(query)) {
-                is UserProfileOperationResult.Success -> {
-                    _uiState.update { state ->
-                        state.copy(
-                            inviteSearchResults = result.data
-                                .filter { it.uid != currentUser?.uid }
-                                .map(UserProfile::toInviteUserUiState)
-                                .filterNot { it.uid in state.memberIds || it.uid in state.collaboratorIds },
-                            isSearchingInviteUsers = false
-                        )
+        inviteSearchJob =
+            viewModelScope.launch {
+                when (val result = userProfileRepository.searchProfiles(query)) {
+                    is UserProfileOperationResult.Success -> {
+                        _uiState.update { state ->
+                            state.copy(
+                                inviteSearchResults =
+                                    result.data
+                                        .filter { it.uid != currentUser?.uid }
+                                        .map(UserProfile::toInviteUserUiState)
+                                        .filterNot { it.uid in state.memberIds || it.uid in state.collaboratorIds },
+                                isSearchingInviteUsers = false,
+                            )
+                        }
                     }
-                }
 
-                is UserProfileOperationResult.Error -> {
-                    _uiState.update {
-                        it.copy(
-                            isSearchingInviteUsers = false,
-                            errorMessageRes = result.messageRes
-                        )
+                    is UserProfileOperationResult.Error -> {
+                        _uiState.update {
+                            it.copy(
+                                isSearchingInviteUsers = false,
+                                errorMessageRes = result.messageRes,
+                            )
+                        }
                     }
                 }
             }
-        }
     }
 
     internal fun sendInvite(invitee: InviteUserUiState) {
-        val user = currentUser ?: run {
-            _uiState.update { it.copy(errorMessageRes = R.string.error_room_auth_required) }
-            return
-        }
+        val user =
+            currentUser ?: run {
+                _uiState.update { it.copy(errorMessageRes = R.string.error_room_auth_required) }
+                return
+            }
         val state = _uiState.value
         if (!state.isCurrentUserOwner || state.isSendingInvite) return
         if (invitee.uid in state.memberIds || invitee.uid in state.collaboratorIds) {
@@ -209,24 +223,25 @@ internal class RoomDetailViewModel(
             it.copy(
                 isSendingInvite = true,
                 errorMessageRes = null,
-                infoMessageRes = null
+                infoMessageRes = null,
             )
         }
 
         viewModelScope.launch {
             when (
-                val result = roomRepository.createRoomInvitation(
-                    CreateRoomInvitationRequest(
-                        roomId = state.roomId,
-                        roomName = state.roomName,
-                        inviterId = user.uid,
-                        inviterName = user.displayNameOrEmailName(),
-                        inviteeId = invitee.uid,
-                        inviteeEmail = invitee.email,
-                        inviteeDisplayName = invitee.displayName,
-                        access = invitee.access
+                val result =
+                    roomRepository.createRoomInvitation(
+                        CreateRoomInvitationRequest(
+                            roomId = state.roomId,
+                            roomName = state.roomName,
+                            inviterId = user.uid,
+                            inviterName = user.displayNameOrEmailName(),
+                            inviteeId = invitee.uid,
+                            inviteeEmail = invitee.email,
+                            inviteeDisplayName = invitee.displayName,
+                            access = invitee.access,
+                        ),
                     )
-                )
             ) {
                 is RoomOperationResult.Success -> {
                     _uiState.update {
@@ -235,7 +250,7 @@ internal class RoomDetailViewModel(
                             isInviteDialogOpen = false,
                             inviteSearchQuery = "",
                             inviteSearchResults = emptyList(),
-                            infoMessageRes = R.string.room_invite_sent
+                            infoMessageRes = R.string.room_invite_sent,
                         )
                     }
                 }
@@ -244,7 +259,7 @@ internal class RoomDetailViewModel(
                     _uiState.update {
                         it.copy(
                             isSendingInvite = false,
-                            errorMessageRes = result.messageRes
+                            errorMessageRes = result.messageRes,
                         )
                     }
                 }
@@ -261,7 +276,7 @@ internal class RoomDetailViewModel(
                 announcementTitleInput = "",
                 announcementMessageInput = "",
                 announcementTitleErrorRes = null,
-                announcementMessageErrorRes = null
+                announcementMessageErrorRes = null,
             )
         }
     }
@@ -271,7 +286,7 @@ internal class RoomDetailViewModel(
             it.copy(
                 announcementTitleInput = value,
                 announcementTitleErrorRes = null,
-                errorMessageRes = null
+                errorMessageRes = null,
             )
         }
     }
@@ -281,16 +296,17 @@ internal class RoomDetailViewModel(
             it.copy(
                 announcementMessageInput = value,
                 announcementMessageErrorRes = null,
-                errorMessageRes = null
+                errorMessageRes = null,
             )
         }
     }
 
     internal fun createAnnouncement() {
-        val user = authRepository.getCurrentUser() ?: run {
-            _uiState.update { it.copy(errorMessageRes = R.string.error_room_auth_required) }
-            return
-        }
+        val user =
+            authRepository.getCurrentUser() ?: run {
+                _uiState.update { it.copy(errorMessageRes = R.string.error_room_auth_required) }
+                return
+            }
         if (_uiState.value.isCreatingAnnouncement) return
 
         val title = _uiState.value.announcementTitleInput.trim()
@@ -304,11 +320,12 @@ internal class RoomDetailViewModel(
                 announcementMessageInput = message,
                 announcementTitleErrorRes = titleError,
                 announcementMessageErrorRes = messageError,
-                errorMessageRes = if (titleError == null && messageError == null) {
-                    null
-                } else {
-                    R.string.error_announcement_fix_fields
-                }
+                errorMessageRes =
+                    if (titleError == null && messageError == null) {
+                        null
+                    } else {
+                        R.string.error_announcement_fix_fields
+                    },
             )
         }
 
@@ -318,21 +335,22 @@ internal class RoomDetailViewModel(
             it.copy(
                 isCreatingAnnouncement = true,
                 errorMessageRes = null,
-                infoMessageRes = null
+                infoMessageRes = null,
             )
         }
 
         viewModelScope.launch {
             when (
-                val result = roomRepository.createAnnouncement(
-                    CreateAnnouncementRequest(
-                        roomId = _uiState.value.roomId,
-                        authorId = user.uid,
-                        authorName = user.displayNameOrEmailName(),
-                        title = title,
-                        message = message
+                val result =
+                    roomRepository.createAnnouncement(
+                        CreateAnnouncementRequest(
+                            roomId = _uiState.value.roomId,
+                            authorId = user.uid,
+                            authorName = user.displayNameOrEmailName(),
+                            title = title,
+                            message = message,
+                        ),
                     )
-                )
             ) {
                 is RoomOperationResult.Success -> {
                     _uiState.update {
@@ -343,7 +361,7 @@ internal class RoomDetailViewModel(
                             announcementMessageInput = "",
                             announcementTitleErrorRes = null,
                             announcementMessageErrorRes = null,
-                            infoMessageRes = R.string.room_detail_post_created
+                            infoMessageRes = R.string.room_detail_post_created,
                         )
                     }
                 }
@@ -352,7 +370,7 @@ internal class RoomDetailViewModel(
                     _uiState.update {
                         it.copy(
                             isCreatingAnnouncement = false,
-                            errorMessageRes = result.messageRes
+                            errorMessageRes = result.messageRes,
                         )
                     }
                 }
@@ -364,7 +382,7 @@ internal class RoomDetailViewModel(
         viewModelScope.launch {
             combine(
                 roomRepository.observeQuizzes(_uiState.value.roomId),
-                roomRepository.observeAnnouncements(_uiState.value.roomId)
+                roomRepository.observeAnnouncements(_uiState.value.roomId),
             ) { quizzesResult, announcementsResult ->
                 quizzesResult to announcementsResult
             }.collect { (quizzesResult, announcementsResult) ->
@@ -373,7 +391,7 @@ internal class RoomDetailViewModel(
                         _uiState.update {
                             it.copy(
                                 isLoadingFeed = false,
-                                errorMessageRes = quizzesResult.messageRes
+                                errorMessageRes = quizzesResult.messageRes,
                             )
                         }
                     }
@@ -382,7 +400,7 @@ internal class RoomDetailViewModel(
                         _uiState.update {
                             it.copy(
                                 isLoadingFeed = false,
-                                errorMessageRes = announcementsResult.messageRes
+                                errorMessageRes = announcementsResult.messageRes,
                             )
                         }
                     }
@@ -391,12 +409,13 @@ internal class RoomDetailViewModel(
                         announcementsResult is RoomOperationResult.Success -> {
                         _uiState.update {
                             it.copy(
-                                feedItems = buildFeedItems(
-                                    quizzes = quizzesResult.data,
-                                    announcements = announcementsResult.data
-                                ),
+                                feedItems =
+                                    buildFeedItems(
+                                        quizzes = quizzesResult.data,
+                                        announcements = announcementsResult.data,
+                                    ),
                                 isLoadingFeed = false,
-                                errorMessageRes = null
+                                errorMessageRes = null,
                             )
                         }
                     }
@@ -412,11 +431,14 @@ internal class RoomDetailViewModel(
                     is RoomOperationResult.Success -> {
                         _uiState.update {
                             it.copy(
+                                roomName = result.data.name,
+                                roomTopic = result.data.topic,
+                                cefrLevel = result.data.cefrLevel,
                                 ownerId = result.data.ownerId,
                                 memberIds = result.data.memberIds,
                                 collaboratorIds = result.data.collaboratorIds,
                                 isCurrentUserOwner = result.data.ownerId == currentUser?.uid,
-                                errorMessageRes = null
+                                errorMessageRes = null,
                             )
                         }
                     }
@@ -432,9 +454,9 @@ internal class RoomDetailViewModel(
 
 private fun buildFeedItems(
     quizzes: List<RoomQuizSummary>,
-    announcements: List<RoomAnnouncement>
-): List<RoomFeedItemUiState> {
-    return buildList {
+    announcements: List<RoomAnnouncement>,
+): List<RoomFeedItemUiState> =
+    buildList {
         announcements.forEach { announcement ->
             add(
                 RoomFeedItemUiState.Announcement(
@@ -442,52 +464,54 @@ private fun buildFeedItems(
                     createdAtEpochMillis = announcement.createdAtEpochMillis,
                     title = announcement.title,
                     message = announcement.message,
-                    authorName = announcement.authorName
-                )
+                    authorName = announcement.authorName,
+                ),
             )
         }
         quizzes.forEach { quiz ->
-            add(
-                RoomFeedItemUiState.Quiz(
-                    id = quiz.id,
-                    createdAtEpochMillis = quiz.createdAtEpochMillis,
-                    title = quiz.title,
-                    cefrLevel = quiz.cefrLevel,
-                    questionTypeLabelRes = labelRes(quiz.questionType),
-                    questionCount = quiz.questionCount
+            if (quiz.status == RoomQuizStatus.READY) {
+                add(
+                    RoomFeedItemUiState.Quiz(
+                        id = quiz.id,
+                        createdAtEpochMillis = quiz.createdAtEpochMillis,
+                        title = quiz.title,
+                        topic = quiz.topic,
+                        cefrLevel = quiz.cefrLevel,
+                        status = quiz.status,
+                        questionTypeLabelRes = labelRes(quiz.questionType),
+                        questionCount = quiz.questionCount,
+                    ),
                 )
-            )
+            }
         }
     }.sortedByDescending(RoomFeedItemUiState::createdAtEpochMillis)
-}
 
-private fun AuthUser.displayNameOrEmailName(): String {
-    return displayName
+private fun AuthUser.displayNameOrEmailName(): String =
+    displayName
         ?.takeIf(String::isNotBlank)
         ?: email?.substringBefore("@").orEmpty()
-}
 
 private fun UserProfile.toInviteUserUiState(): InviteUserUiState {
-    val access = when (role) {
-        UserRole.TEACHER -> RoomInvitationAccess.COLLABORATOR
-        UserRole.STUDENT, null -> RoomInvitationAccess.MEMBER
-    }
+    val access =
+        when (role) {
+            UserRole.TEACHER -> RoomInvitationAccess.COLLABORATOR
+            UserRole.STUDENT, null -> RoomInvitationAccess.MEMBER
+        }
 
     return InviteUserUiState(
         uid = uid,
         displayName = displayName,
         email = email,
         role = role,
-        access = access
+        access = access,
     )
 }
 
-internal fun labelRes(questionType: QuestionType): Int {
-    return when (questionType) {
+internal fun labelRes(questionType: QuestionType): Int =
+    when (questionType) {
         QuestionType.MULTIPLE_CHOICE -> R.string.room_detail_type_multiple_choice
         QuestionType.FILL_IN_BLANK -> R.string.room_detail_type_fill_in_blank
+        QuestionType.WORD_SCRAMBLE -> R.string.room_detail_type_word_scramble
     }
-}
 
-private const val DEFAULT_CEFR_LEVEL = "B1"
 private const val MIN_INVITE_SEARCH_QUERY_LENGTH = 2

@@ -32,7 +32,7 @@ internal data class ProfileUiState(
     val collaboratingRoomCount: Int = 0,
     val isLoadingProfile: Boolean = true,
     val isLoadingRooms: Boolean = true,
-    val errorMessageRes: Int? = null
+    val errorMessageRes: Int? = null,
 )
 
 /**
@@ -41,21 +41,22 @@ internal data class ProfileUiState(
 internal class ProfileViewModel(
     private val authRepository: AuthRepository,
     private val userProfileRepository: UserProfileRepository,
-    private val roomRepository: RoomRepository
+    private val roomRepository: RoomRepository,
 ) : ViewModel() {
     private val currentUser = authRepository.getCurrentUser()
 
-    private val _uiState = MutableStateFlow(
-        ProfileUiState(
-            displayName = currentUser.displayNameOrFallback(),
-            email = currentUser?.email.orEmpty(),
-            initials = currentUser.toInitials(),
-            isLoadingProfile = currentUser != null,
-            isLoadingRooms = currentUser != null,
-            errorMessageRes = if (currentUser == null) R.string.error_user_profile_auth_required else null
+    private val _uiState =
+        MutableStateFlow(
+            ProfileUiState(
+                displayName = currentUser.displayNameOrFallback(),
+                email = currentUser?.email.orEmpty(),
+                initials = currentUser.toInitials(),
+                isLoadingProfile = currentUser != null,
+                isLoadingRooms = currentUser != null,
+                errorMessageRes = if (currentUser == null) R.string.error_user_profile_auth_required else null,
+            ),
         )
-    )
-    internal val uiState: StateFlow<ProfileUiState> = _uiState.asStateFlow()
+    val uiState: StateFlow<ProfileUiState> = _uiState.asStateFlow()
 
     init {
         observeProfile()
@@ -84,7 +85,7 @@ internal class ProfileViewModel(
                                 role = result.data.role,
                                 teacherApprovalStatus = result.data.teacherApprovalStatus,
                                 isLoadingProfile = false,
-                                errorMessageRes = null
+                                errorMessageRes = null,
                             )
                         }
                     }
@@ -93,7 +94,7 @@ internal class ProfileViewModel(
                         _uiState.update {
                             it.copy(
                                 isLoadingProfile = false,
-                                errorMessageRes = result.messageRes
+                                errorMessageRes = result.messageRes,
                             )
                         }
                     }
@@ -109,7 +110,7 @@ internal class ProfileViewModel(
             combine(
                 roomRepository.observeOwnedRooms(user.uid),
                 roomRepository.observeMemberRooms(user.uid),
-                roomRepository.observeCollaboratingRooms(user.uid)
+                roomRepository.observeCollaboratingRooms(user.uid),
             ) { ownedResult, memberResult, collaboratingResult ->
                 Triple(ownedResult, memberResult, collaboratingResult)
             }.collect { (ownedResult, memberResult, collaboratingResult) ->
@@ -118,7 +119,7 @@ internal class ProfileViewModel(
                         _uiState.update {
                             it.copy(
                                 isLoadingRooms = false,
-                                errorMessageRes = ownedResult.messageRes
+                                errorMessageRes = ownedResult.messageRes,
                             )
                         }
                     }
@@ -127,7 +128,7 @@ internal class ProfileViewModel(
                         _uiState.update {
                             it.copy(
                                 isLoadingRooms = false,
-                                errorMessageRes = memberResult.messageRes
+                                errorMessageRes = memberResult.messageRes,
                             )
                         }
                     }
@@ -136,7 +137,7 @@ internal class ProfileViewModel(
                         _uiState.update {
                             it.copy(
                                 isLoadingRooms = false,
-                                errorMessageRes = collaboratingResult.messageRes
+                                errorMessageRes = collaboratingResult.messageRes,
                             )
                         }
                     }
@@ -150,7 +151,7 @@ internal class ProfileViewModel(
                                 memberRoomCount = memberResult.data.size,
                                 collaboratingRoomCount = collaboratingResult.data.size,
                                 isLoadingRooms = false,
-                                errorMessageRes = null
+                                errorMessageRes = null,
                             )
                         }
                     }
@@ -160,21 +161,20 @@ internal class ProfileViewModel(
     }
 }
 
-private fun AuthUser?.displayNameOrFallback(): String {
-    return this?.displayName
+private fun AuthUser?.displayNameOrFallback(): String =
+    this
+        ?.displayName
         ?.takeIf(String::isNotBlank)
         ?: this?.email?.substringBefore("@").orEmpty()
-}
 
-private fun AuthUser?.toInitials(): String {
-    return this?.displayNameOrFallback().orEmpty().toInitials()
-}
+private fun AuthUser?.toInitials(): String = this?.displayNameOrFallback().orEmpty().toInitials()
 
 private fun String.toInitials(): String {
-    val source = split(" ")
-        .filter(String::isNotBlank)
-        .take(2)
-        .joinToString("") { it.take(1).uppercase() }
+    val source =
+        split(" ")
+            .filter(String::isNotBlank)
+            .take(2)
+            .joinToString("") { it.take(1).uppercase() }
 
     return source.ifBlank { "?" }
 }

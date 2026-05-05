@@ -5,5 +5,6 @@ package com.benza.smartrooms.data.room.model
  */
 internal enum class QuestionType {
     MULTIPLE_CHOICE,
-    FILL_IN_BLANK
+    FILL_IN_BLANK,
+    WORD_SCRAMBLE,
 }

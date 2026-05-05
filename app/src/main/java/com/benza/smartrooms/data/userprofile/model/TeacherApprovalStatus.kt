@@ -7,5 +7,5 @@ internal enum class TeacherApprovalStatus {
     NONE,
     PENDING,
     APPROVED,
-    REJECTED
+    REJECTED,
 }

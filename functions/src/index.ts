@@ -7,5 +7,5 @@ export {
   acceptRoomInvitation,
   rejectRoomInvitation
 } from "./roomInvitations.js";
-export { generateQuizForRoom } from "./quizzes.js";
+export { generateQuizForRoom, retryQuizForRoom } from "./quizzes.js";
 export { syncTeacherRequestToUserProfile } from "./teacherRequests.js";

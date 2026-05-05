@@ -53,7 +53,7 @@ import org.koin.androidx.compose.koinViewModel
 internal fun ProfileRouteScreen(
     onBackClick: () -> Unit,
     onLoggedOut: () -> Unit,
-    viewModel: ProfileViewModel = koinViewModel()
+    viewModel: ProfileViewModel = koinViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
 
@@ -63,7 +63,7 @@ internal fun ProfileRouteScreen(
         onLogoutClick = {
             viewModel.logout()
             onLoggedOut()
-        }
+        },
     )
 }
 
@@ -74,14 +74,15 @@ internal fun ProfileRouteScreen(
 internal fun ProfileScreen(
     uiState: ProfileUiState,
     onBackClick: () -> Unit,
-    onLogoutClick: () -> Unit
+    onLogoutClick: () -> Unit,
 ) {
     LazyColumn(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
-            .padding(horizontal = 20.dp, vertical = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
+        modifier =
+            Modifier
+                .fillMaxSize()
+                .background(MaterialTheme.colorScheme.background)
+                .padding(horizontal = 20.dp, vertical = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         item {
             ProfileTopBar(onBackClick = onBackClick)
@@ -93,7 +94,7 @@ internal fun ProfileScreen(
             item {
                 AuthFeedbackBanner(
                     message = stringResource(uiState.errorMessageRes),
-                    type = AuthFeedbackType.Error
+                    type = AuthFeedbackType.Error,
                 )
             }
         }
@@ -110,72 +111,72 @@ internal fun ProfileScreen(
 }
 
 @Composable
-private fun ProfileTopBar(
-    onBackClick: () -> Unit
-) {
+private fun ProfileTopBar(onBackClick: () -> Unit) {
     Row(
         modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically
+        verticalAlignment = Alignment.CenterVertically,
     ) {
         IconButton(onClick = onBackClick) {
             Icon(
                 imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                contentDescription = stringResource(R.string.action_back)
+                contentDescription = stringResource(R.string.action_back),
             )
         }
         Text(
             text = stringResource(R.string.profile_title),
-            style = MaterialTheme.typography.headlineMedium
+            style = MaterialTheme.typography.headlineMedium,
         )
     }
 }
 
 @Composable
-private fun ProfileHeroCard(
-    uiState: ProfileUiState
-) {
+private fun ProfileHeroCard(uiState: ProfileUiState) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(28.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface
-        )
+        colors =
+            CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surface,
+            ),
     ) {
         Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(24.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .padding(24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Box(
-                modifier = Modifier
-                    .size(88.dp)
-                    .clip(CircleShape)
-                    .background(
-                        brush = Brush.linearGradient(
-                            colors = listOf(Lagoon, Coral)
-                        )
-                    ),
-                contentAlignment = Alignment.Center
+                modifier =
+                    Modifier
+                        .size(88.dp)
+                        .clip(CircleShape)
+                        .background(
+                            brush =
+                                Brush.linearGradient(
+                                    colors = listOf(Lagoon, Coral),
+                                ),
+                        ),
+                contentAlignment = Alignment.Center,
             ) {
                 Text(
                     text = uiState.initials,
                     style = MaterialTheme.typography.headlineMedium,
-                    color = MaterialTheme.colorScheme.onPrimary
+                    color = MaterialTheme.colorScheme.onPrimary,
                 )
             }
             Spacer(modifier = Modifier.height(18.dp))
             Text(
                 text = uiState.displayName,
                 style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.SemiBold
+                fontWeight = FontWeight.SemiBold,
             )
             if (uiState.email.isNotBlank()) {
                 Spacer(modifier = Modifier.height(6.dp))
                 Text(
                     text = uiState.email,
                     style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
         }
@@ -183,97 +184,93 @@ private fun ProfileHeroCard(
 }
 
 @Composable
-private fun ProfileRoleCard(
-    uiState: ProfileUiState
-) {
+private fun ProfileRoleCard(uiState: ProfileUiState) {
     ProfileSectionCard {
         Text(
             text = stringResource(R.string.profile_role_title),
-            style = MaterialTheme.typography.titleMedium
+            style = MaterialTheme.typography.titleMedium,
         )
         Spacer(modifier = Modifier.height(14.dp))
         ProfileInfoSurface(
             label = stringResource(R.string.profile_role_label),
-            value = when (uiState.role) {
-                UserRole.TEACHER -> stringResource(R.string.profile_role_professor)
-                UserRole.STUDENT -> stringResource(R.string.profile_role_student)
-                null -> stringResource(R.string.profile_role_not_selected)
-            },
-            loading = uiState.isLoadingProfile
+            value =
+                when (uiState.role) {
+                    UserRole.TEACHER -> stringResource(R.string.profile_role_professor)
+                    UserRole.STUDENT -> stringResource(R.string.profile_role_student)
+                    null -> stringResource(R.string.profile_role_not_selected)
+                },
+            loading = uiState.isLoadingProfile,
         )
         if (uiState.role == UserRole.TEACHER || uiState.teacherApprovalStatus != TeacherApprovalStatus.NONE) {
             Spacer(modifier = Modifier.height(12.dp))
             ProfileInfoSurface(
                 label = stringResource(R.string.profile_teacher_status_label),
-                value = when (uiState.teacherApprovalStatus) {
-                    TeacherApprovalStatus.APPROVED -> stringResource(R.string.profile_teacher_status_approved)
-                    TeacherApprovalStatus.PENDING -> stringResource(R.string.profile_teacher_status_pending)
-                    TeacherApprovalStatus.REJECTED -> stringResource(R.string.profile_teacher_status_rejected)
-                    TeacherApprovalStatus.NONE -> stringResource(R.string.profile_teacher_status_none)
-                },
-                loading = uiState.isLoadingProfile
+                value =
+                    when (uiState.teacherApprovalStatus) {
+                        TeacherApprovalStatus.APPROVED -> stringResource(R.string.profile_teacher_status_approved)
+                        TeacherApprovalStatus.PENDING -> stringResource(R.string.profile_teacher_status_pending)
+                        TeacherApprovalStatus.REJECTED -> stringResource(R.string.profile_teacher_status_rejected)
+                        TeacherApprovalStatus.NONE -> stringResource(R.string.profile_teacher_status_none)
+                    },
+                loading = uiState.isLoadingProfile,
             )
         }
     }
 }
 
 @Composable
-private fun ProfileRoomStatsCard(
-    uiState: ProfileUiState
-) {
+private fun ProfileRoomStatsCard(uiState: ProfileUiState) {
     ProfileSectionCard {
         Text(
             text = stringResource(R.string.profile_rooms_title),
-            style = MaterialTheme.typography.titleMedium
+            style = MaterialTheme.typography.titleMedium,
         )
         Spacer(modifier = Modifier.height(14.dp))
         if (uiState.role == UserRole.TEACHER) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 ProfileInfoSurface(
                     label = stringResource(R.string.profile_rooms_owned_count),
                     value = uiState.ownedRoomCount.toString(),
                     loading = uiState.isLoadingRooms,
-                    modifier = Modifier.weight(1f)
+                    modifier = Modifier.weight(1f),
                 )
                 ProfileInfoSurface(
                     label = stringResource(R.string.profile_rooms_collaborating_count),
                     value = uiState.collaboratingRoomCount.toString(),
                     loading = uiState.isLoadingRooms,
-                    modifier = Modifier.weight(1f)
+                    modifier = Modifier.weight(1f),
                 )
             }
         } else {
             ProfileInfoSurface(
                 label = stringResource(R.string.profile_rooms_member_count),
                 value = uiState.memberRoomCount.toString(),
-                loading = uiState.isLoadingRooms
+                loading = uiState.isLoadingRooms,
             )
         }
     }
 }
 
 @Composable
-private fun ProfileAccountCard(
-    onLogoutClick: () -> Unit
-) {
+private fun ProfileAccountCard(onLogoutClick: () -> Unit) {
     ProfileSectionCard {
         Text(
             text = stringResource(R.string.profile_account_title),
-            style = MaterialTheme.typography.titleMedium
+            style = MaterialTheme.typography.titleMedium,
         )
         Spacer(modifier = Modifier.height(8.dp))
         Text(
             text = stringResource(R.string.profile_account_subtitle),
             style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Spacer(modifier = Modifier.height(18.dp))
         Button(
             onClick = onLogoutClick,
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier.fillMaxWidth(),
         ) {
             Text(stringResource(R.string.action_log_out))
         }
@@ -281,21 +278,21 @@ private fun ProfileAccountCard(
 }
 
 @Composable
-private fun ProfileSectionCard(
-    content: @Composable ColumnScope.() -> Unit
-) {
+private fun ProfileSectionCard(content: @Composable ColumnScope.() -> Unit) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(28.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface
-        )
+        colors =
+            CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surface,
+            ),
     ) {
         Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(24.dp),
-            content = content
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .padding(24.dp),
+            content = content,
         )
     }
 }
@@ -305,35 +302,36 @@ private fun ProfileInfoSurface(
     label: String,
     value: String,
     loading: Boolean,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
 ) {
     Surface(
         modifier = modifier.fillMaxWidth(),
         shape = RoundedCornerShape(20.dp),
-        color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.42f)
+        color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.42f),
     ) {
         Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .heightIn(min = 82.dp)
-                .padding(horizontal = 18.dp, vertical = 14.dp),
-            verticalArrangement = Arrangement.SpaceBetween
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 82.dp)
+                    .padding(horizontal = 18.dp, vertical = 14.dp),
+            verticalArrangement = Arrangement.SpaceBetween,
         ) {
             Text(
                 text = label,
                 style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             if (loading) {
                 CircularProgressIndicator(
                     modifier = Modifier.size(20.dp),
-                    strokeWidth = 2.dp
+                    strokeWidth = 2.dp,
                 )
             } else {
                 Text(
                     text = value,
                     style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.SemiBold
+                    fontWeight = FontWeight.SemiBold,
                 )
             }
         }

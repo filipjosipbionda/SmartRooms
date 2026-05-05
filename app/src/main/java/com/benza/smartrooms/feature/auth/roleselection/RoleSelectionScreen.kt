@@ -39,7 +39,7 @@ import org.koin.androidx.compose.koinViewModel
 internal fun RoleSelectionRouteScreen(
     onRoleSaved: () -> Unit,
     onLogout: () -> Unit,
-    viewModel: RoleSelectionViewModel = koinViewModel()
+    viewModel: RoleSelectionViewModel = koinViewModel(),
 ) {
     val uiState = viewModel.uiState.collectAsStateWithLifecycle()
 
@@ -56,7 +56,7 @@ internal fun RoleSelectionRouteScreen(
         uiState = uiState.value,
         onTeacherRequestClick = viewModel::submitTeacherRequest,
         onStudentClick = viewModel::selectStudentRole,
-        onLogoutClick = viewModel::logout
+        onLogoutClick = viewModel::logout,
     )
 }
 
@@ -65,19 +65,20 @@ internal fun RoleSelectionScreen(
     uiState: RoleSelectionUiState,
     onTeacherRequestClick: () -> Unit,
     onStudentClick: () -> Unit,
-    onLogoutClick: () -> Unit
+    onLogoutClick: () -> Unit,
 ) {
     AuthScaffold(
         title = stringResource(R.string.role_selection_title),
-        subtitle = stringResource(
-            R.string.role_selection_subtitle,
-            uiState.displayName.ifBlank { uiState.email }
-        )
+        subtitle =
+            stringResource(
+                R.string.role_selection_subtitle,
+                uiState.displayName.ifBlank { uiState.email },
+            ),
     ) {
         if (uiState.errorMessageRes != null) {
             AuthFeedbackBanner(
                 message = stringResource(uiState.errorMessageRes),
-                type = AuthFeedbackType.Error
+                type = AuthFeedbackType.Error,
             )
             Spacer(modifier = Modifier.height(16.dp))
         }
@@ -93,13 +94,13 @@ internal fun RoleSelectionScreen(
                 TeacherApprovalStatus.REJECTED -> {
                     AuthFeedbackBanner(
                         message = stringResource(R.string.role_teacher_rejected_message),
-                        type = AuthFeedbackType.Error
+                        type = AuthFeedbackType.Error,
                     )
                     Spacer(modifier = Modifier.height(16.dp))
                     RoleOptions(
                         isLoading = uiState.isLoading,
                         onTeacherRequestClick = onTeacherRequestClick,
-                        onStudentClick = onStudentClick
+                        onStudentClick = onStudentClick,
                     )
                 }
 
@@ -107,7 +108,7 @@ internal fun RoleSelectionScreen(
                     RoleOptions(
                         isLoading = uiState.isLoading,
                         onTeacherRequestClick = onTeacherRequestClick,
-                        onStudentClick = onStudentClick
+                        onStudentClick = onStudentClick,
                     )
                 }
             }
@@ -117,7 +118,7 @@ internal fun RoleSelectionScreen(
         OutlinedButton(
             onClick = onLogoutClick,
             enabled = !uiState.isLoading,
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier.fillMaxWidth(),
         ) {
             Text(text = stringResource(R.string.action_log_out))
         }
@@ -128,79 +129,83 @@ internal fun RoleSelectionScreen(
 private fun RoleOptions(
     isLoading: Boolean,
     onTeacherRequestClick: () -> Unit,
-    onStudentClick: () -> Unit
+    onStudentClick: () -> Unit,
 ) {
     RoleOptionCard(
         title = stringResource(R.string.role_teacher_title),
         description = stringResource(R.string.role_teacher_request_description),
-        accentBrush = Brush.linearGradient(
-            colors = listOf(
-                Lagoon.copy(alpha = 0.18f),
-                MaterialTheme.colorScheme.surface
-            )
-        ),
+        accentBrush =
+            Brush.linearGradient(
+                colors =
+                    listOf(
+                        Lagoon.copy(alpha = 0.18f),
+                        MaterialTheme.colorScheme.surface,
+                    ),
+            ),
         buttonText = stringResource(R.string.action_request_teacher_access),
         enabled = !isLoading,
-        onClick = onTeacherRequestClick
+        onClick = onTeacherRequestClick,
     )
     Spacer(modifier = Modifier.height(14.dp))
     RoleOptionCard(
         title = stringResource(R.string.role_student_title),
         description = stringResource(R.string.role_student_description),
-        accentBrush = Brush.linearGradient(
-            colors = listOf(
-                Coral.copy(alpha = 0.16f),
-                MaterialTheme.colorScheme.surface
-            )
-        ),
+        accentBrush =
+            Brush.linearGradient(
+                colors =
+                    listOf(
+                        Coral.copy(alpha = 0.16f),
+                        MaterialTheme.colorScheme.surface,
+                    ),
+            ),
         buttonText = stringResource(R.string.action_continue_as_student),
         enabled = !isLoading,
-        onClick = onStudentClick
+        onClick = onStudentClick,
     )
 }
 
 @Composable
-private fun PendingTeacherApprovalCard(
-) {
+private fun PendingTeacherApprovalCard() {
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(24.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
     ) {
         Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(
-                    Brush.linearGradient(
-                        colors = listOf(
-                            Lagoon.copy(alpha = 0.18f),
-                            MaterialTheme.colorScheme.surface
-                        )
-                    )
-                )
-                .padding(20.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .background(
+                        Brush.linearGradient(
+                            colors =
+                                listOf(
+                                    Lagoon.copy(alpha = 0.18f),
+                                    MaterialTheme.colorScheme.surface,
+                                ),
+                        ),
+                    ).padding(20.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Text(
                 text = stringResource(R.string.role_teacher_pending_title),
                 style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold
+                fontWeight = FontWeight.SemiBold,
             )
             Text(
                 text = stringResource(R.string.role_teacher_pending_description),
                 style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.Center
+                horizontalArrangement = Arrangement.Center,
             ) {
                 CircularProgressIndicator()
             }
             Text(
                 text = stringResource(R.string.role_teacher_pending_live_hint),
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
     }
@@ -213,36 +218,37 @@ private fun RoleOptionCard(
     accentBrush: Brush,
     buttonText: String,
     enabled: Boolean,
-    onClick: () -> Unit
+    onClick: () -> Unit,
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(24.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
     ) {
         Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(accentBrush)
-                .padding(20.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .background(accentBrush)
+                    .padding(20.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text(
                     text = title,
                     style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold
+                    fontWeight = FontWeight.SemiBold,
                 )
                 Text(
                     text = description,
                     style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
             Button(
                 onClick = onClick,
                 enabled = enabled,
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier.fillMaxWidth(),
             ) {
                 Text(text = buttonText)
             }
@@ -255,13 +261,14 @@ private fun RoleOptionCard(
 private fun RoleSelectionScreenPreview() {
     SmartRoomsTheme {
         RoleSelectionScreen(
-            uiState = RoleSelectionUiState(
-                displayName = "Filip",
-                email = "filip@example.com"
-            ),
+            uiState =
+                RoleSelectionUiState(
+                    displayName = "Filip",
+                    email = "filip@example.com",
+                ),
             onTeacherRequestClick = {},
             onStudentClick = {},
-            onLogoutClick = {}
+            onLogoutClick = {},
         )
     }
 }

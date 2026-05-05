@@ -7,5 +7,6 @@ internal data class CreateRoomRequest(
     val ownerId: String,
     val ownerName: String,
     val name: String,
-    val topic: String
+    val topic: String,
+    val cefrLevel: String,
 )

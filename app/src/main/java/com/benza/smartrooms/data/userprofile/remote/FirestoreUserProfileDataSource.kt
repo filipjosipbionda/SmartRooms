@@ -8,20 +8,20 @@ import com.google.android.gms.tasks.Task
 import com.google.firebase.firestore.DocumentSnapshot
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.SetOptions
-import kotlin.coroutines.resume
-import kotlin.coroutines.resumeWithException
-import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.asExecutor
+import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
 
 /**
  * Firestore access for app-level user profiles.
  */
 internal class FirestoreUserProfileDataSource(
-    private val firestore: FirebaseFirestore
+    private val firestore: FirebaseFirestore,
 ) {
     /**
      * Ensures that a Firestore profile exists for the supplied authenticated user.
@@ -37,25 +37,27 @@ internal class FirestoreUserProfileDataSource(
         }
 
         val profile = snapshot.toUserProfile(user)
-        val missingProfileFields = buildMap<String, Any?> {
-            if (snapshot.getString(UID_FIELD).isNullOrBlank()) {
-                put(UID_FIELD, profile.uid)
+        val missingProfileFields =
+            buildMap<String, Any?> {
+                if (snapshot.getString(UID_FIELD).isNullOrBlank()) {
+                    put(UID_FIELD, profile.uid)
+                }
+                if (snapshot.getString(EMAIL_FIELD).isNullOrBlank() && profile.email.isNotBlank()) {
+                    put(EMAIL_FIELD, profile.email)
+                }
+                if (snapshot.getString(DISPLAY_NAME_FIELD).isNullOrBlank() && profile.displayName.isNotBlank()) {
+                    put(DISPLAY_NAME_FIELD, profile.displayName)
+                }
+                if (!snapshot.contains(PROFILE_COMPLETE_FIELD)) {
+                    put(PROFILE_COMPLETE_FIELD, profile.profileComplete)
+                }
             }
-            if (snapshot.getString(EMAIL_FIELD).isNullOrBlank() && profile.email.isNotBlank()) {
-                put(EMAIL_FIELD, profile.email)
-            }
-            if (snapshot.getString(DISPLAY_NAME_FIELD).isNullOrBlank() && profile.displayName.isNotBlank()) {
-                put(DISPLAY_NAME_FIELD, profile.displayName)
-            }
-            if (!snapshot.contains(PROFILE_COMPLETE_FIELD)) {
-                put(PROFILE_COMPLETE_FIELD, profile.profileComplete)
-            }
-        }
         if (missingProfileFields.isNotEmpty()) {
-            document.set(
-                missingProfileFields + (UPDATED_AT_FIELD to System.currentTimeMillis()),
-                SetOptions.merge()
-            ).await()
+            document
+                .set(
+                    missingProfileFields + (UPDATED_AT_FIELD to System.currentTimeMillis()),
+                    SetOptions.merge(),
+                ).await()
         }
 
         return profile
@@ -64,25 +66,28 @@ internal class FirestoreUserProfileDataSource(
     /**
      * Observes the user profile document and emits updates as soon as approval state changes.
      */
-    internal fun observeProfile(user: AuthUser): Flow<UserProfile> = callbackFlow {
-        val document = firestore.collection(USERS_COLLECTION).document(user.uid)
-        val registration = document.addSnapshotListener(FIRESTORE_CALLBACK_EXECUTOR) { snapshot, error ->
-            if (error != null) {
-                close(error)
-                return@addSnapshotListener
-            }
+    internal fun observeProfile(user: AuthUser): Flow<UserProfile> =
+        callbackFlow {
+            val document = firestore.collection(USERS_COLLECTION).document(user.uid)
+            val registration =
+                document.addSnapshotListener(FIRESTORE_CALLBACK_EXECUTOR) { snapshot, error ->
+                    if (error != null) {
+                        close(error)
+                        return@addSnapshotListener
+                    }
 
-            val profile = if (snapshot?.exists() == true) {
-                snapshot.toUserProfile(user)
-            } else {
-                user.toDefaultProfile()
-            }
+                    val profile =
+                        if (snapshot?.exists() == true) {
+                            snapshot.toUserProfile(user)
+                        } else {
+                            user.toDefaultProfile()
+                        }
 
-            trySend(profile)
+                    trySend(profile)
+                }
+
+            awaitClose { registration.remove() }
         }
-
-        awaitClose { registration.remove() }
-    }
 
     /**
      * Searches existing profiles by display name or email.
@@ -91,46 +96,45 @@ internal class FirestoreUserProfileDataSource(
         val normalizedQuery = query.trim().lowercase()
         if (normalizedQuery.length < MIN_SEARCH_QUERY_LENGTH) return emptyList()
 
-        return firestore.collection(USERS_COLLECTION)
+        return firestore
+            .collection(USERS_COLLECTION)
             .get()
             .await()
             .documents
             .mapNotNull { snapshot ->
-                val fallbackUser = AuthUser(
-                    uid = snapshot.id,
-                    email = snapshot.getString(EMAIL_FIELD),
-                    displayName = snapshot.getString(DISPLAY_NAME_FIELD)
-                )
+                val fallbackUser =
+                    AuthUser(
+                        uid = snapshot.id,
+                        email = snapshot.getString(EMAIL_FIELD),
+                        displayName = snapshot.getString(DISPLAY_NAME_FIELD),
+                    )
                 snapshot.toUserProfile(fallbackUser)
-            }
-            .filter { profile ->
+            }.filter { profile ->
                 profile.displayName.lowercase().contains(normalizedQuery) ||
                     profile.email.lowercase().contains(normalizedQuery)
-            }
-            .sortedWith(
+            }.sortedWith(
                 compareBy<UserProfile> { !it.email.lowercase().startsWith(normalizedQuery) }
                     .thenBy { !it.displayName.lowercase().startsWith(normalizedQuery) }
-                    .thenBy { it.displayName.lowercase() }
-            )
-            .take(MAX_SEARCH_RESULTS)
+                    .thenBy { it.displayName.lowercase() },
+            ).take(MAX_SEARCH_RESULTS)
     }
 
     /**
      * Selects the student role and marks onboarding as complete.
      */
     internal suspend fun selectStudentRole(uid: String) {
-        firestore.collection(USERS_COLLECTION)
+        firestore
+            .collection(USERS_COLLECTION)
             .document(uid)
             .set(
                 mapOf(
                     ROLE_FIELD to STUDENT_ROLE,
                     PROFILE_COMPLETE_FIELD to true,
                     TEACHER_APPROVAL_STATUS_FIELD to TeacherApprovalStatus.NONE.toBackendValue(),
-                    UPDATED_AT_FIELD to System.currentTimeMillis()
+                    UPDATED_AT_FIELD to System.currentTimeMillis(),
                 ),
-                SetOptions.merge()
-            )
-            .await()
+                SetOptions.merge(),
+            ).await()
     }
 
     /**
@@ -139,7 +143,8 @@ internal class FirestoreUserProfileDataSource(
     internal suspend fun submitTeacherRequest(user: AuthUser) {
         val now = System.currentTimeMillis()
 
-        firestore.collection(TEACHER_REQUESTS_COLLECTION)
+        firestore
+            .collection(TEACHER_REQUESTS_COLLECTION)
             .document(user.uid)
             .set(
                 mapOf(
@@ -149,32 +154,32 @@ internal class FirestoreUserProfileDataSource(
                     REQUEST_STATUS_FIELD to TeacherApprovalStatus.PENDING.toBackendValue(),
                     REQUESTED_ROLE_FIELD to TEACHER_ROLE,
                     CREATED_AT_FIELD to now,
-                    UPDATED_AT_FIELD to now
+                    UPDATED_AT_FIELD to now,
                 ),
-                SetOptions.merge()
-            )
-            .await()
+                SetOptions.merge(),
+            ).await()
 
-        firestore.collection(USERS_COLLECTION)
+        firestore
+            .collection(USERS_COLLECTION)
             .document(user.uid)
             .set(
                 mapOf(
                     ROLE_FIELD to null,
                     PROFILE_COMPLETE_FIELD to false,
                     TEACHER_APPROVAL_STATUS_FIELD to TeacherApprovalStatus.PENDING.toBackendValue(),
-                    UPDATED_AT_FIELD to now
+                    UPDATED_AT_FIELD to now,
                 ),
-                SetOptions.merge()
-            )
-            .await()
+                SetOptions.merge(),
+            ).await()
     }
 }
 
 private fun DocumentSnapshot.toUserProfile(fallbackUser: AuthUser): UserProfile {
     val email = getString(EMAIL_FIELD).orEmpty().ifBlank { fallbackUser.email.orEmpty() }
-    val displayName = getString(DISPLAY_NAME_FIELD).orEmpty().ifBlank {
-        fallbackUser.displayName.orEmailLocalPart(fallbackUser.email)
-    }
+    val displayName =
+        getString(DISPLAY_NAME_FIELD).orEmpty().ifBlank {
+            fallbackUser.displayName.orEmailLocalPart(fallbackUser.email)
+        }
     val role = getString(ROLE_FIELD).toUserRole()
 
     return UserProfile(
@@ -183,20 +188,19 @@ private fun DocumentSnapshot.toUserProfile(fallbackUser: AuthUser): UserProfile 
         displayName = displayName,
         role = role,
         profileComplete = getBoolean(PROFILE_COMPLETE_FIELD) ?: (role != null),
-        teacherApprovalStatus = getString(TEACHER_APPROVAL_STATUS_FIELD).toTeacherApprovalStatus()
+        teacherApprovalStatus = getString(TEACHER_APPROVAL_STATUS_FIELD).toTeacherApprovalStatus(),
     )
 }
 
-private fun AuthUser.toDefaultProfile(): UserProfile {
-    return UserProfile(
+private fun AuthUser.toDefaultProfile(): UserProfile =
+    UserProfile(
         uid = uid,
         email = email.orEmpty(),
         displayName = displayName.orEmailLocalPart(email),
         role = null,
         profileComplete = false,
-        teacherApprovalStatus = TeacherApprovalStatus.NONE
+        teacherApprovalStatus = TeacherApprovalStatus.NONE,
     )
-}
 
 private fun UserProfile.toMap(): Map<String, Any?> {
     val now = System.currentTimeMillis()
@@ -208,50 +212,45 @@ private fun UserProfile.toMap(): Map<String, Any?> {
         PROFILE_COMPLETE_FIELD to profileComplete,
         TEACHER_APPROVAL_STATUS_FIELD to teacherApprovalStatus.toBackendValue(),
         CREATED_AT_FIELD to now,
-        UPDATED_AT_FIELD to now
+        UPDATED_AT_FIELD to now,
     )
 }
 
-private fun String?.toUserRole(): UserRole? {
-    return when (this) {
+private fun String?.toUserRole(): UserRole? =
+    when (this) {
         "teacher" -> UserRole.TEACHER
         "student" -> UserRole.STUDENT
         else -> null
     }
-}
 
-private fun String?.toTeacherApprovalStatus(): TeacherApprovalStatus {
-    return when (this) {
+private fun String?.toTeacherApprovalStatus(): TeacherApprovalStatus =
+    when (this) {
         "pending" -> TeacherApprovalStatus.PENDING
         "approved" -> TeacherApprovalStatus.APPROVED
         "rejected" -> TeacherApprovalStatus.REJECTED
         else -> TeacherApprovalStatus.NONE
     }
-}
 
-private fun UserRole.toBackendValue(): String {
-    return when (this) {
+private fun UserRole.toBackendValue(): String =
+    when (this) {
         UserRole.TEACHER -> TEACHER_ROLE
         UserRole.STUDENT -> STUDENT_ROLE
     }
-}
 
-private fun TeacherApprovalStatus.toBackendValue(): String {
-    return when (this) {
+private fun TeacherApprovalStatus.toBackendValue(): String =
+    when (this) {
         TeacherApprovalStatus.NONE -> "none"
         TeacherApprovalStatus.PENDING -> "pending"
         TeacherApprovalStatus.APPROVED -> "approved"
         TeacherApprovalStatus.REJECTED -> "rejected"
     }
-}
 
-private fun String?.orEmailLocalPart(email: String?): String {
-    return this?.takeIf(String::isNotBlank)
+private fun String?.orEmailLocalPart(email: String?): String =
+    this?.takeIf(String::isNotBlank)
         ?: email?.substringBefore("@").orEmpty()
-}
 
-private suspend fun <T> Task<T>.await(): T {
-    return suspendCancellableCoroutine { continuation ->
+private suspend fun <T> Task<T>.await(): T =
+    suspendCancellableCoroutine { continuation ->
         addOnCompleteListener(FIREBASE_TASK_EXECUTOR) { task ->
             if (task.isSuccessful) {
                 continuation.resume(task.result)
@@ -260,7 +259,6 @@ private suspend fun <T> Task<T>.await(): T {
             }
         }
     }
-}
 
 private val FIRESTORE_CALLBACK_EXECUTOR = Dispatchers.IO.asExecutor()
 private val FIREBASE_TASK_EXECUTOR = Dispatchers.IO.asExecutor()

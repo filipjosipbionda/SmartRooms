@@ -14,12 +14,18 @@ import kotlinx.coroutines.launch
 
 internal sealed interface AuthGateState {
     data object Loading : AuthGateState
-    data class Error(val messageRes: Int) : AuthGateState
-    data class Resolved(val destination: StartupDestination) : AuthGateState
+
+    data class Error(
+        val messageRes: Int,
+    ) : AuthGateState
+
+    data class Resolved(
+        val destination: StartupDestination,
+    ) : AuthGateState
 }
 
 internal data class AuthGateUiState(
-    val state: AuthGateState = AuthGateState.Loading
+    val state: AuthGateState = AuthGateState.Loading,
 )
 
 /**
@@ -27,10 +33,10 @@ internal data class AuthGateUiState(
  */
 internal class AuthGateViewModel(
     private val authRepository: AuthRepository,
-    private val userProfileRepository: UserProfileRepository
+    private val userProfileRepository: UserProfileRepository,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(AuthGateUiState())
-    internal val uiState: StateFlow<AuthGateUiState> = _uiState.asStateFlow()
+    val uiState: StateFlow<AuthGateUiState> = _uiState.asStateFlow()
 
     internal fun retry() {
         resolve()
@@ -57,13 +63,14 @@ internal class AuthGateViewModel(
                 is UserProfileOperationResult.Success -> {
                     _uiState.update {
                         it.copy(
-                            state = AuthGateState.Resolved(
-                                if (result.data.isReady) {
-                                    StartupDestination.HOME
-                                } else {
-                                    StartupDestination.ROLE_SELECTION
-                                }
-                            )
+                            state =
+                                AuthGateState.Resolved(
+                                    if (result.data.isReady) {
+                                        StartupDestination.HOME
+                                    } else {
+                                        StartupDestination.ROLE_SELECTION
+                                    },
+                                ),
                         )
                     }
                 }

@@ -5,5 +5,5 @@ package com.benza.smartrooms.data.userprofile.model
  */
 internal enum class UserRole {
     TEACHER,
-    STUDENT
+    STUDENT,
 }

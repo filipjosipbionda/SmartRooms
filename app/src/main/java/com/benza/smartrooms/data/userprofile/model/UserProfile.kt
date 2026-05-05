@@ -9,5 +9,5 @@ internal data class UserProfile(
     val displayName: String,
     val role: UserRole?,
     val profileComplete: Boolean,
-    val teacherApprovalStatus: TeacherApprovalStatus = TeacherApprovalStatus.NONE
+    val teacherApprovalStatus: TeacherApprovalStatus = TeacherApprovalStatus.NONE,
 )

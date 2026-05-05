@@ -7,10 +7,15 @@ internal sealed interface RoomOperationResult<out T> {
     /**
      * Successful room operation carrying the requested payload.
      */
-    data class Success<T>(val data: T) : RoomOperationResult<T>
+    data class Success<T>(
+        val data: T,
+    ) : RoomOperationResult<T>
 
     /**
      * Failed room operation represented by a user-facing string resource id.
      */
-    data class Error(val messageRes: Int) : RoomOperationResult<Nothing>
+    data class Error(
+        val messageRes: Int,
+        val debugMessage: String? = null,
+    ) : RoomOperationResult<Nothing>
 }

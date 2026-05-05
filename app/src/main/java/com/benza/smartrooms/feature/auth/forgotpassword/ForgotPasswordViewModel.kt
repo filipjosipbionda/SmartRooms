@@ -20,17 +20,17 @@ internal data class ForgotPasswordUiState(
     val isLoading: Boolean = false,
     val emailErrorRes: Int? = null,
     val generalMessageRes: Int? = null,
-    val infoMessageRes: Int? = null
+    val infoMessageRes: Int? = null,
 )
 
 /**
  * Handles validation and password reset email requests.
  */
 internal class ForgotPasswordViewModel(
-    private val authRepository: AuthRepository
+    private val authRepository: AuthRepository,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(ForgotPasswordUiState())
-    internal val uiState: StateFlow<ForgotPasswordUiState> = _uiState.asStateFlow()
+    val uiState: StateFlow<ForgotPasswordUiState> = _uiState.asStateFlow()
 
     /**
      * Updates the email input and clears stale feedback.
@@ -41,7 +41,7 @@ internal class ForgotPasswordViewModel(
                 email = value,
                 emailErrorRes = null,
                 generalMessageRes = null,
-                infoMessageRes = null
+                infoMessageRes = null,
             )
         }
     }
@@ -52,18 +52,19 @@ internal class ForgotPasswordViewModel(
     internal fun submit() {
         val state = _uiState.value
         val email = state.email.trim()
-        val emailError = when {
-            email.isBlank() -> R.string.error_email_required
-            !Patterns.EMAIL_ADDRESS.matcher(email).matches() -> R.string.error_email_invalid
-            else -> null
-        }
+        val emailError =
+            when {
+                email.isBlank() -> R.string.error_email_required
+                !Patterns.EMAIL_ADDRESS.matcher(email).matches() -> R.string.error_email_invalid
+                else -> null
+            }
 
         _uiState.update {
             it.copy(
                 email = email,
                 emailErrorRes = emailError,
                 generalMessageRes = null,
-                infoMessageRes = null
+                infoMessageRes = null,
             )
         }
 
@@ -81,7 +82,7 @@ internal class ForgotPasswordViewModel(
                             isLoading = false,
                             emailErrorRes = null,
                             generalMessageRes = null,
-                            infoMessageRes = R.string.forgot_password_info
+                            infoMessageRes = R.string.forgot_password_info,
                         )
                     }
                 }
@@ -91,7 +92,7 @@ internal class ForgotPasswordViewModel(
                         it.copy(
                             isLoading = false,
                             generalMessageRes = result.messageRes,
-                            infoMessageRes = null
+                            infoMessageRes = null,
                         )
                     }
                 }

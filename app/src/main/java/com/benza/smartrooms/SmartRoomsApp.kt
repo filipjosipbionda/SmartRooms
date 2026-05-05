@@ -9,8 +9,8 @@ import androidx.navigation.NavHostController
 import androidx.navigation.compose.ComposeNavigator
 import androidx.navigation.compose.DialogNavigator
 import com.benza.smartrooms.data.userprofile.model.StartupDestination
-import com.benza.smartrooms.feature.auth.authgate.AuthGateState
 import com.benza.smartrooms.feature.auth.authgate.AuthGateScreen
+import com.benza.smartrooms.feature.auth.authgate.AuthGateState
 import com.benza.smartrooms.feature.auth.authgate.AuthGateViewModel
 import com.benza.smartrooms.navigation.HomeRoute
 import com.benza.smartrooms.navigation.LoginRoute
@@ -28,25 +28,27 @@ internal fun SmartRoomsApp() {
 
     when (val authGateState = authGateUiState.state) {
         AuthGateState.Loading,
-        is AuthGateState.Error -> {
+        is AuthGateState.Error,
+        -> {
             AuthGateScreen(
                 uiState = authGateUiState,
-                onRetryClick = authGateViewModel::retry
+                onRetryClick = authGateViewModel::retry,
             )
         }
 
         is AuthGateState.Resolved -> {
-            val startDestination = when (authGateState.destination) {
-                StartupDestination.LOGIN -> LoginRoute
-                StartupDestination.ROLE_SELECTION -> RoleSelectionRoute
-                StartupDestination.HOME -> HomeRoute
-            }
+            val startDestination =
+                when (authGateState.destination) {
+                    StartupDestination.LOGIN -> LoginRoute
+                    StartupDestination.ROLE_SELECTION -> RoleSelectionRoute
+                    StartupDestination.HOME -> HomeRoute
+                }
 
             val navController = rememberFreshNavController(startDestination)
             SmartRoomsNavHost(
                 navController = navController,
                 startDestination = startDestination,
-                onSessionResolvedRequired = authGateViewModel::resolve
+                onSessionResolvedRequired = authGateViewModel::resolve,
             )
         }
     }

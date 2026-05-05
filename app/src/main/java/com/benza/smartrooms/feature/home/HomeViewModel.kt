@@ -5,7 +5,6 @@ import androidx.lifecycle.viewModelScope
 import com.benza.smartrooms.R
 import com.benza.smartrooms.data.auth.model.AuthUser
 import com.benza.smartrooms.data.auth.repository.AuthRepository
-import com.benza.smartrooms.data.room.model.CreateRoomRequest
 import com.benza.smartrooms.data.room.model.Room
 import com.benza.smartrooms.data.room.model.RoomInvitation
 import com.benza.smartrooms.data.room.model.RoomInvitationAccess
@@ -28,14 +27,15 @@ internal data class HomeRoomUiState(
     val topic: String,
     val participantCount: Int,
     val unansweredQuizCount: Int,
+    val ownerName: String,
     val role: HomeRoomRole = HomeRoomRole.MEMBER,
-    val createdAtEpochMillis: Long = 0L
+    val createdAtEpochMillis: Long = 0L,
 )
 
 internal enum class HomeRoomRole {
     OWNER,
     COLLABORATOR,
-    MEMBER
+    MEMBER,
 }
 
 internal data class HomeInvitationUiState(
@@ -43,7 +43,7 @@ internal data class HomeInvitationUiState(
     val roomName: String,
     val inviterName: String,
     val access: RoomInvitationAccess,
-    val createdAtEpochMillis: Long
+    val createdAtEpochMillis: Long,
 )
 
 /**
@@ -56,18 +56,12 @@ internal data class HomeUiState(
     val rooms: List<HomeRoomUiState> = emptyList(),
     val pagedRooms: List<HomeRoomUiState> = emptyList(),
     val isLoadingRooms: Boolean = true,
-    val isCreatingRoom: Boolean = false,
-    val isCreateRoomDialogOpen: Boolean = false,
     val currentPage: Int = 0,
     val totalPages: Int = 0,
     val pendingInvitations: List<HomeInvitationUiState> = emptyList(),
     val processingInvitationIds: Set<String> = emptySet(),
-    val roomNameInput: String = "",
-    val roomTopicInput: String = "",
-    val roomNameErrorRes: Int? = null,
-    val roomTopicErrorRes: Int? = null,
     val errorMessageRes: Int? = null,
-    val infoMessageRes: Int? = null
+    val infoMessageRes: Int? = null,
 )
 
 /**
@@ -75,155 +69,23 @@ internal data class HomeUiState(
  */
 internal class HomeViewModel(
     private val authRepository: AuthRepository,
-    private val roomRepository: RoomRepository
+    private val roomRepository: RoomRepository,
 ) : ViewModel() {
     private val currentUser = authRepository.getCurrentUser()
 
-    private val _uiState = MutableStateFlow(
-        HomeUiState(
-            profileInitials = currentUser.toInitials(),
-            isLoadingRooms = currentUser != null,
-            errorMessageRes = if (currentUser == null) R.string.error_room_auth_required else null
+    private val _uiState =
+        MutableStateFlow(
+            HomeUiState(
+                profileInitials = currentUser.toInitials(),
+                isLoadingRooms = currentUser != null,
+                errorMessageRes = if (currentUser == null) R.string.error_room_auth_required else null,
+            ),
         )
-    )
-    internal val uiState: StateFlow<HomeUiState> = _uiState.asStateFlow()
+    val uiState: StateFlow<HomeUiState> = _uiState.asStateFlow()
 
     init {
         observeRooms()
         observePendingInvitations()
-    }
-
-    /**
-     * Opens the create-room dialog.
-     */
-    internal fun showCreateRoomDialog() {
-        _uiState.update {
-            it.copy(
-                isCreateRoomDialogOpen = true,
-                roomNameErrorRes = null,
-                roomTopicErrorRes = null,
-                errorMessageRes = null
-            )
-        }
-    }
-
-    /**
-     * Closes the create-room dialog and clears its transient validation state.
-     */
-    internal fun dismissCreateRoomDialog() {
-        if (_uiState.value.isCreatingRoom) return
-
-        _uiState.update {
-            it.copy(
-                isCreateRoomDialogOpen = false,
-                roomNameInput = "",
-                roomTopicInput = "",
-                roomNameErrorRes = null,
-                roomTopicErrorRes = null
-            )
-        }
-    }
-
-    /**
-     * Updates the pending room name input.
-     */
-    internal fun onRoomNameChanged(value: String) {
-        _uiState.update {
-            it.copy(
-                roomNameInput = value,
-                roomNameErrorRes = null,
-                errorMessageRes = null
-            )
-        }
-    }
-
-    /**
-     * Updates the pending room topic input.
-     */
-    internal fun onRoomTopicChanged(value: String) {
-        _uiState.update {
-            it.copy(
-                roomTopicInput = value,
-                roomTopicErrorRes = null,
-                errorMessageRes = null
-            )
-        }
-    }
-
-    /**
-     * Creates a new Firestore room from dialog input.
-     */
-    internal fun createRoom() {
-        val user = currentUser ?: run {
-            _uiState.update { it.copy(errorMessageRes = R.string.error_room_auth_required) }
-            return
-        }
-        if (_uiState.value.isCreatingRoom) return
-
-        val roomName = _uiState.value.roomNameInput.trim()
-        val roomTopic = _uiState.value.roomTopicInput.trim()
-        val roomNameError = if (roomName.isBlank()) R.string.error_room_name_required else null
-        val roomTopicError = if (roomTopic.isBlank()) R.string.error_room_topic_required else null
-
-        _uiState.update {
-            it.copy(
-                roomNameInput = roomName,
-                roomTopicInput = roomTopic,
-                roomNameErrorRes = roomNameError,
-                roomTopicErrorRes = roomTopicError,
-                errorMessageRes = if (roomNameError == null && roomTopicError == null) {
-                    null
-                } else {
-                    R.string.error_room_fix_fields
-                }
-            )
-        }
-
-        if (roomNameError != null || roomTopicError != null) return
-
-        _uiState.update {
-            it.copy(
-                isCreatingRoom = true,
-                errorMessageRes = null,
-                infoMessageRes = null
-            )
-        }
-
-        viewModelScope.launch {
-            when (
-                val result = roomRepository.createRoom(
-                    CreateRoomRequest(
-                        ownerId = user.uid,
-                        ownerName = user.displayNameOrEmailName(),
-                        name = roomName,
-                        topic = roomTopic
-                    )
-                )
-            ) {
-                is RoomOperationResult.Success -> {
-                    _uiState.update {
-                        it.copy(
-                            isCreatingRoom = false,
-                            isCreateRoomDialogOpen = false,
-                            roomNameInput = "",
-                            roomTopicInput = "",
-                            roomNameErrorRes = null,
-                            roomTopicErrorRes = null,
-                            infoMessageRes = R.string.home_room_created
-                        )
-                    }
-                }
-
-                is RoomOperationResult.Error -> {
-                    _uiState.update {
-                        it.copy(
-                            isCreatingRoom = false,
-                            errorMessageRes = result.messageRes
-                        )
-                    }
-                }
-            }
-        }
     }
 
     /**
@@ -262,7 +124,7 @@ internal class HomeViewModel(
                         it.copy(
                             processingInvitationIds = it.processingInvitationIds - invitationId,
                             infoMessageRes = R.string.room_invitation_accepted,
-                            errorMessageRes = null
+                            errorMessageRes = null,
                         )
                     }
                 }
@@ -271,7 +133,7 @@ internal class HomeViewModel(
                     _uiState.update {
                         it.copy(
                             processingInvitationIds = it.processingInvitationIds - invitationId,
-                            errorMessageRes = result.messageRes
+                            errorMessageRes = result.messageRes,
                         )
                     }
                 }
@@ -289,7 +151,7 @@ internal class HomeViewModel(
                         it.copy(
                             processingInvitationIds = it.processingInvitationIds - invitationId,
                             infoMessageRes = R.string.room_invitation_rejected,
-                            errorMessageRes = null
+                            errorMessageRes = null,
                         )
                     }
                 }
@@ -298,7 +160,7 @@ internal class HomeViewModel(
                     _uiState.update {
                         it.copy(
                             processingInvitationIds = it.processingInvitationIds - invitationId,
-                            errorMessageRes = result.messageRes
+                            errorMessageRes = result.messageRes,
                         )
                     }
                 }
@@ -313,7 +175,7 @@ internal class HomeViewModel(
             combine(
                 roomRepository.observeOwnedRooms(user.uid),
                 roomRepository.observeMemberRooms(user.uid),
-                roomRepository.observeCollaboratingRooms(user.uid)
+                roomRepository.observeCollaboratingRooms(user.uid),
             ) { ownedResult, memberResult, collaboratingResult ->
                 Triple(ownedResult, memberResult, collaboratingResult)
             }.collect { (ownedResult, memberResult, collaboratingResult) ->
@@ -322,7 +184,7 @@ internal class HomeViewModel(
                         _uiState.update {
                             it.copy(
                                 isLoadingRooms = false,
-                                errorMessageRes = ownedResult.messageRes
+                                errorMessageRes = ownedResult.messageRes,
                             )
                         }
                     }
@@ -331,7 +193,7 @@ internal class HomeViewModel(
                         _uiState.update {
                             it.copy(
                                 isLoadingRooms = false,
-                                errorMessageRes = memberResult.messageRes
+                                errorMessageRes = memberResult.messageRes,
                             )
                         }
                     }
@@ -340,7 +202,7 @@ internal class HomeViewModel(
                         _uiState.update {
                             it.copy(
                                 isLoadingRooms = false,
-                                errorMessageRes = collaboratingResult.messageRes
+                                errorMessageRes = collaboratingResult.messageRes,
                             )
                         }
                     }
@@ -349,22 +211,25 @@ internal class HomeViewModel(
                         memberResult is RoomOperationResult.Success &&
                         collaboratingResult is RoomOperationResult.Success -> {
                         val ownedRooms = ownedResult.data.map { it.toHomeRoomUiState(HomeRoomRole.OWNER) }
-                        val collaboratingRooms = collaboratingResult.data.map {
-                            it.toHomeRoomUiState(HomeRoomRole.COLLABORATOR)
-                        }
+                        val collaboratingRooms =
+                            collaboratingResult.data.map {
+                                it.toHomeRoomUiState(HomeRoomRole.COLLABORATOR)
+                            }
                         val memberRooms = memberResult.data.map { it.toHomeRoomUiState(HomeRoomRole.MEMBER) }
-                        val rooms = (ownedRooms + collaboratingRooms + memberRooms)
-                            .distinctBy(HomeRoomUiState::id)
-                            .sortedByDescending(HomeRoomUiState::createdAtEpochMillis)
+                        val rooms =
+                            (ownedRooms + collaboratingRooms + memberRooms)
+                                .distinctBy(HomeRoomUiState::id)
+                                .sortedByDescending(HomeRoomUiState::createdAtEpochMillis)
 
                         _uiState.update {
-                            it.copy(
-                                rooms = rooms,
-                                isLoadingRooms = false,
-                                joinedRoomsCount = rooms.size,
-                                unansweredQuizCount = rooms.sumOf(HomeRoomUiState::unansweredQuizCount),
-                                errorMessageRes = null
-                            ).withPagination(currentPage = it.currentPage)
+                            it
+                                .copy(
+                                    rooms = rooms,
+                                    isLoadingRooms = false,
+                                    joinedRoomsCount = rooms.size,
+                                    unansweredQuizCount = rooms.sumOf(HomeRoomUiState::unansweredQuizCount),
+                                    errorMessageRes = null,
+                                ).withPagination(currentPage = it.currentPage)
                         }
                     }
                 }
@@ -382,7 +247,7 @@ internal class HomeViewModel(
                         _uiState.update {
                             it.copy(
                                 pendingInvitations = result.data.map(RoomInvitation::toHomeInvitationUiState),
-                                errorMessageRes = null
+                                errorMessageRes = null,
                             )
                         }
                     }
@@ -395,42 +260,45 @@ internal class HomeViewModel(
         }
     }
 
-    private fun updateInvitationProcessing(invitationId: String, processing: Boolean) {
+    private fun updateInvitationProcessing(
+        invitationId: String,
+        processing: Boolean,
+    ) {
         _uiState.update {
             it.copy(
-                processingInvitationIds = if (processing) {
-                    it.processingInvitationIds + invitationId
-                } else {
-                    it.processingInvitationIds - invitationId
-                },
+                processingInvitationIds =
+                    if (processing) {
+                        it.processingInvitationIds + invitationId
+                    } else {
+                        it.processingInvitationIds - invitationId
+                    },
                 errorMessageRes = null,
-                infoMessageRes = null
+                infoMessageRes = null,
             )
         }
     }
 }
 
-private fun Room.toHomeRoomUiState(role: HomeRoomRole): HomeRoomUiState {
-    return HomeRoomUiState(
+private fun Room.toHomeRoomUiState(role: HomeRoomRole): HomeRoomUiState =
+    HomeRoomUiState(
         id = id,
         name = name,
         topic = topic,
         participantCount = participantCount,
         unansweredQuizCount = unansweredQuizCount,
+        ownerName = ownerName,
         role = role,
-        createdAtEpochMillis = createdAtEpochMillis
+        createdAtEpochMillis = createdAtEpochMillis,
     )
-}
 
-private fun RoomInvitation.toHomeInvitationUiState(): HomeInvitationUiState {
-    return HomeInvitationUiState(
+private fun RoomInvitation.toHomeInvitationUiState(): HomeInvitationUiState =
+    HomeInvitationUiState(
         id = id,
         roomName = roomName,
         inviterName = inviterName,
         access = access,
-        createdAtEpochMillis = createdAtEpochMillis
+        createdAtEpochMillis = createdAtEpochMillis,
     )
-}
 
 private fun HomeUiState.withPagination(currentPage: Int): HomeUiState {
     val totalPages = if (rooms.isEmpty()) 0 else ((rooms.size - 1) / JOINED_ROOMS_PAGE_SIZE) + 1
@@ -441,23 +309,20 @@ private fun HomeUiState.withPagination(currentPage: Int): HomeUiState {
     return copy(
         pagedRooms = rooms.subList(startIndex, endIndex),
         currentPage = if (totalPages == 0) 0 else safePage,
-        totalPages = totalPages
+        totalPages = totalPages,
     )
 }
 
-private fun AuthUser?.displayNameOrEmailName(): String {
-    return this?.displayName
-        ?.takeIf(String::isNotBlank)
-        ?: this?.email?.substringBefore("@").orEmpty()
-}
-
-private fun AuthUser?.toInitials(): String {
-    return displayNameOrEmailName()
-        .split(" ")
+private fun AuthUser?.toInitials(): String =
+    (
+        this
+            ?.displayName
+            ?.takeIf(String::isNotBlank)
+            ?: this?.email?.substringBefore("@").orEmpty()
+    ).split(" ")
         .filter(String::isNotBlank)
         .take(2)
         .joinToString("") { it.take(1).uppercase() }
         .ifBlank { "?" }
-}
 
 private const val JOINED_ROOMS_PAGE_SIZE = 4

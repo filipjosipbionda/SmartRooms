@@ -18,11 +18,11 @@ import com.benza.smartrooms.ui.theme.SmartRoomsTheme
 @Composable
 internal fun AuthGateScreen(
     uiState: AuthGateUiState,
-    onRetryClick: () -> Unit
+    onRetryClick: () -> Unit,
 ) {
     AuthScaffold(
         title = stringResource(R.string.auth_gate_title),
-        subtitle = stringResource(R.string.auth_gate_subtitle)
+        subtitle = stringResource(R.string.auth_gate_subtitle),
     ) {
         when (val state = uiState.state) {
             AuthGateState.Loading -> {
@@ -32,12 +32,12 @@ internal fun AuthGateScreen(
             is AuthGateState.Error -> {
                 AuthFeedbackBanner(
                     message = stringResource(state.messageRes),
-                    type = AuthFeedbackType.Error
+                    type = AuthFeedbackType.Error,
                 )
                 Spacer(modifier = Modifier.height(16.dp))
                 AuthPrimaryButton(
                     text = stringResource(R.string.action_retry),
-                    onClick = onRetryClick
+                    onClick = onRetryClick,
                 )
             }
 
@@ -52,7 +52,7 @@ private fun AuthGateScreenLoadingPreview() {
     SmartRoomsTheme {
         AuthGateScreen(
             uiState = AuthGateUiState(state = AuthGateState.Loading),
-            onRetryClick = {}
+            onRetryClick = {},
         )
     }
 }
@@ -62,10 +62,11 @@ private fun AuthGateScreenLoadingPreview() {
 private fun AuthGateScreenErrorPreview() {
     SmartRoomsTheme {
         AuthGateScreen(
-            uiState = AuthGateUiState(
-                state = AuthGateState.Error(R.string.error_user_profile_auth_required)
-            ),
-            onRetryClick = {}
+            uiState =
+                AuthGateUiState(
+                    state = AuthGateState.Error(R.string.error_user_profile_auth_required),
+                ),
+            onRetryClick = {},
         )
     }
 }

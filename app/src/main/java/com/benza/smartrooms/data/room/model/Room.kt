@@ -7,10 +7,12 @@ internal data class Room(
     val id: String,
     val name: String,
     val topic: String,
+    val cefrLevel: String,
     val participantCount: Int,
     val unansweredQuizCount: Int,
     val ownerId: String,
+    val ownerName: String,
     val memberIds: List<String> = emptyList(),
     val collaboratorIds: List<String> = emptyList(),
-    val createdAtEpochMillis: Long
+    val createdAtEpochMillis: Long,
 )

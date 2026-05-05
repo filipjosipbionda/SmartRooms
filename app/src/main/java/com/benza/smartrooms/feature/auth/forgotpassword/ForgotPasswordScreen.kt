@@ -24,7 +24,7 @@ import org.koin.androidx.compose.koinViewModel
 @Composable
 internal fun ForgotPasswordRouteScreen(
     onBackToLoginClick: () -> Unit,
-    viewModel: ForgotPasswordViewModel = koinViewModel()
+    viewModel: ForgotPasswordViewModel = koinViewModel(),
 ) {
     val uiState = viewModel.uiState.collectAsStateWithLifecycle()
 
@@ -32,7 +32,7 @@ internal fun ForgotPasswordRouteScreen(
         uiState = uiState.value,
         onEmailChange = viewModel::onEmailChanged,
         onSubmitClick = viewModel::submit,
-        onBackToLoginClick = onBackToLoginClick
+        onBackToLoginClick = onBackToLoginClick,
     )
 }
 
@@ -44,23 +44,23 @@ internal fun ForgotPasswordScreen(
     uiState: ForgotPasswordUiState,
     onEmailChange: (String) -> Unit,
     onSubmitClick: () -> Unit,
-    onBackToLoginClick: () -> Unit
+    onBackToLoginClick: () -> Unit,
 ) {
     AuthScaffold(
         title = stringResource(R.string.forgot_password_title),
-        subtitle = stringResource(R.string.forgot_password_subtitle)
+        subtitle = stringResource(R.string.forgot_password_subtitle),
     ) {
         if (uiState.generalMessageRes != null) {
             AuthFeedbackBanner(
                 message = stringResource(uiState.generalMessageRes),
-                type = AuthFeedbackType.Error
+                type = AuthFeedbackType.Error,
             )
             Spacer(modifier = Modifier.height(16.dp))
         }
         if (uiState.infoMessageRes != null) {
             AuthFeedbackBanner(
                 message = stringResource(uiState.infoMessageRes),
-                type = AuthFeedbackType.Success
+                type = AuthFeedbackType.Success,
             )
             Spacer(modifier = Modifier.height(16.dp))
         }
@@ -69,23 +69,24 @@ internal fun ForgotPasswordScreen(
             onValueChange = onEmailChange,
             label = stringResource(R.string.label_email),
             enabled = !uiState.isLoading,
-            supportingText = uiState.emailErrorRes?.let { stringResource(it) }
+            supportingText = uiState.emailErrorRes?.let { stringResource(it) },
         )
         Spacer(modifier = Modifier.height(20.dp))
         AuthPrimaryButton(
-            text = stringResource(
-                if (uiState.isLoading) R.string.action_sending_reset_link else R.string.action_send_reset_link
-            ),
+            text =
+                stringResource(
+                    if (uiState.isLoading) R.string.action_sending_reset_link else R.string.action_send_reset_link,
+                ),
             onClick = onSubmitClick,
             enabled = !uiState.isLoading,
-            loading = uiState.isLoading
+            loading = uiState.isLoading,
         )
         Spacer(modifier = Modifier.height(12.dp))
         InlineActionText(
             leadingText = stringResource(R.string.forgot_password_remembered),
             actionText = stringResource(R.string.action_back_to_sign_in),
             onActionClick = onBackToLoginClick,
-            enabled = !uiState.isLoading
+            enabled = !uiState.isLoading,
         )
     }
 }
@@ -101,7 +102,7 @@ private fun ForgotPasswordScreenPreview() {
             uiState = ForgotPasswordUiState(),
             onEmailChange = {},
             onSubmitClick = {},
-            onBackToLoginClick = {}
+            onBackToLoginClick = {},
         )
     }
 }

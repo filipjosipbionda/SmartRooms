@@ -3,19 +3,20 @@ package com.benza.smartrooms.data.room.remote
 import com.benza.smartrooms.data.room.model.CreateRoomInvitationRequest
 import com.benza.smartrooms.data.room.model.GenerateQuizRequest
 import com.benza.smartrooms.data.room.model.QuestionType
+import com.benza.smartrooms.data.room.model.QuizKind
 import com.google.android.gms.tasks.Task
 import com.google.firebase.functions.FirebaseFunctions
-import kotlin.coroutines.resume
-import kotlin.coroutines.resumeWithException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.asExecutor
 import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
 
 /**
  * Cloud Functions room wrapper for quiz generation actions.
  */
 internal class FirebaseFunctionsRoomDataSource(
-    private val functions: FirebaseFunctions
+    private val functions: FirebaseFunctions,
 ) {
     /**
      * Calls the backend function that generates and stores a quiz for the supplied room.
@@ -25,13 +26,35 @@ internal class FirebaseFunctionsRoomDataSource(
             .getHttpsCallable(GENERATE_QUIZ_FUNCTION)
             .call(
                 mapOf(
+                    CLIENT_REQUEST_ID_FIELD to request.clientRequestId,
                     ROOM_ID_FIELD to request.roomId,
+                    QUIZ_TITLE_FIELD to request.title,
+                    QUIZ_KIND_FIELD to request.quizKind.toBackendValue(),
+                    QUIZ_TOPIC_FIELD to request.topic,
+                    VOCABULARY_WORDS_FIELD to request.vocabularyWords,
                     CEFR_LEVEL_FIELD to request.cefrLevel,
                     QUESTION_COUNT_FIELD to request.questionCount,
-                    QUESTION_TYPE_FIELD to request.questionType.toBackendValue()
-                )
-            )
-            .await()
+                    QUESTION_TYPE_FIELD to request.questionType.toBackendValue(),
+                    QUESTION_TIME_LIMIT_SECONDS_FIELD to request.questionTimeLimitSeconds,
+                ),
+            ).await()
+    }
+
+    /**
+     * Calls the backend function that retries generation for an existing failed quiz.
+     */
+    internal suspend fun retryQuizGeneration(
+        roomId: String,
+        quizId: String,
+    ) {
+        functions
+            .getHttpsCallable(RETRY_QUIZ_FUNCTION)
+            .call(
+                mapOf(
+                    ROOM_ID_FIELD to roomId,
+                    QUIZ_ID_FIELD to quizId,
+                ),
+            ).await()
     }
 
     /**
@@ -43,10 +66,9 @@ internal class FirebaseFunctionsRoomDataSource(
             .call(
                 mapOf(
                     ROOM_ID_FIELD to request.roomId,
-                    INVITEE_ID_FIELD to request.inviteeId
-                )
-            )
-            .await()
+                    INVITEE_ID_FIELD to request.inviteeId,
+                ),
+            ).await()
     }
 
     /**
@@ -70,15 +92,21 @@ internal class FirebaseFunctionsRoomDataSource(
     }
 }
 
-private fun QuestionType.toBackendValue(): String {
-    return when (this) {
+private fun QuestionType.toBackendValue(): String =
+    when (this) {
         QuestionType.MULTIPLE_CHOICE -> "multiple_choice"
         QuestionType.FILL_IN_BLANK -> "fill_in_blank"
+        QuestionType.WORD_SCRAMBLE -> "word_scramble"
     }
-}
 
-private suspend fun <T> Task<T>.await(): T {
-    return suspendCancellableCoroutine { continuation ->
+private fun QuizKind.toBackendValue(): String =
+    when (this) {
+        QuizKind.GRAMMAR -> "grammar"
+        QuizKind.VOCABULARY -> "vocabulary"
+    }
+
+private suspend fun <T> Task<T>.await(): T =
+    suspendCancellableCoroutine { continuation ->
         addOnCompleteListener(FIREBASE_TASK_EXECUTOR) { task ->
             if (task.isSuccessful) {
                 continuation.resume(task.result)
@@ -87,17 +115,24 @@ private suspend fun <T> Task<T>.await(): T {
             }
         }
     }
-}
 
 private val FIREBASE_TASK_EXECUTOR = Dispatchers.IO.asExecutor()
 
 private const val GENERATE_QUIZ_FUNCTION = "generateQuizForRoom"
+private const val RETRY_QUIZ_FUNCTION = "retryQuizForRoom"
 private const val SEND_ROOM_INVITATION_FUNCTION = "sendRoomInvitation"
 private const val ACCEPT_ROOM_INVITATION_FUNCTION = "acceptRoomInvitation"
 private const val REJECT_ROOM_INVITATION_FUNCTION = "rejectRoomInvitation"
+private const val CLIENT_REQUEST_ID_FIELD = "clientRequestId"
 private const val ROOM_ID_FIELD = "roomId"
+private const val QUIZ_ID_FIELD = "quizId"
+private const val QUIZ_TITLE_FIELD = "title"
 private const val INVITEE_ID_FIELD = "inviteeId"
 private const val INVITATION_ID_FIELD = "invitationId"
+private const val QUIZ_KIND_FIELD = "quizKind"
+private const val QUIZ_TOPIC_FIELD = "topic"
+private const val VOCABULARY_WORDS_FIELD = "vocabularyWords"
 private const val CEFR_LEVEL_FIELD = "cefrLevel"
 private const val QUESTION_COUNT_FIELD = "questionCount"
 private const val QUESTION_TYPE_FIELD = "questionType"
+private const val QUESTION_TIME_LIMIT_SECONDS_FIELD = "questionTimeLimitSeconds"

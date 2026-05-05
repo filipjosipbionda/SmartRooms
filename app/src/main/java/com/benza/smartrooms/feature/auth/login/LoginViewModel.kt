@@ -23,17 +23,17 @@ internal data class LoginUiState(
     val isAuthenticated: Boolean = false,
     val emailErrorRes: Int? = null,
     val passwordErrorRes: Int? = null,
-    val generalMessageRes: Int? = null
+    val generalMessageRes: Int? = null,
 )
 
 /**
  * Handles validation and Firebase-backed login requests.
  */
 internal class LoginViewModel(
-    private val authRepository: AuthRepository
+    private val authRepository: AuthRepository,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(LoginUiState())
-    internal val uiState: StateFlow<LoginUiState> = _uiState.asStateFlow()
+    val uiState: StateFlow<LoginUiState> = _uiState.asStateFlow()
 
     /**
      * Updates the email input and clears stale validation feedback.
@@ -43,7 +43,7 @@ internal class LoginViewModel(
             it.copy(
                 email = value,
                 emailErrorRes = null,
-                generalMessageRes = null
+                generalMessageRes = null,
             )
         }
     }
@@ -56,7 +56,7 @@ internal class LoginViewModel(
             it.copy(
                 password = value,
                 passwordErrorRes = null,
-                generalMessageRes = null
+                generalMessageRes = null,
             )
         }
     }
@@ -74,16 +74,18 @@ internal class LoginViewModel(
     internal fun submit() {
         val state = _uiState.value
         val email = state.email.trim()
-        val emailError = when {
-            email.isBlank() -> R.string.error_email_required
-            !Patterns.EMAIL_ADDRESS.matcher(email).matches() -> R.string.error_email_invalid
-            else -> null
-        }
-        val passwordError = when {
-            state.password.isBlank() -> R.string.error_password_required
-            state.password.length < 8 -> R.string.error_password_length
-            else -> null
-        }
+        val emailError =
+            when {
+                email.isBlank() -> R.string.error_email_required
+                !Patterns.EMAIL_ADDRESS.matcher(email).matches() -> R.string.error_email_invalid
+                else -> null
+            }
+        val passwordError =
+            when {
+                state.password.isBlank() -> R.string.error_password_required
+                state.password.length < 8 -> R.string.error_password_length
+                else -> null
+            }
         val isValid = emailError == null && passwordError == null
 
         _uiState.update {
@@ -91,7 +93,7 @@ internal class LoginViewModel(
                 email = email,
                 emailErrorRes = emailError,
                 passwordErrorRes = passwordError,
-                generalMessageRes = if (isValid) null else R.string.error_fix_highlighted_fields
+                generalMessageRes = if (isValid) null else R.string.error_fix_highlighted_fields,
             )
         }
 
@@ -100,7 +102,7 @@ internal class LoginViewModel(
         _uiState.update {
             it.copy(
                 isLoading = true,
-                generalMessageRes = null
+                generalMessageRes = null,
             )
         }
 
@@ -111,7 +113,7 @@ internal class LoginViewModel(
                         it.copy(
                             isLoading = false,
                             isAuthenticated = true,
-                            generalMessageRes = null
+                            generalMessageRes = null,
                         )
                     }
                 }
@@ -120,7 +122,7 @@ internal class LoginViewModel(
                     _uiState.update {
                         it.copy(
                             isLoading = false,
-                            generalMessageRes = result.messageRes
+                            generalMessageRes = result.messageRes,
                         )
                     }
                 }

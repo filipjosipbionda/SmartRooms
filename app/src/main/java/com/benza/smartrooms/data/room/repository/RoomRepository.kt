@@ -4,10 +4,12 @@ import com.benza.smartrooms.data.room.model.CreateAnnouncementRequest
 import com.benza.smartrooms.data.room.model.CreateRoomInvitationRequest
 import com.benza.smartrooms.data.room.model.CreateRoomRequest
 import com.benza.smartrooms.data.room.model.GenerateQuizRequest
-import com.benza.smartrooms.data.room.model.RoomAnnouncement
 import com.benza.smartrooms.data.room.model.Room
+import com.benza.smartrooms.data.room.model.RoomAnnouncement
 import com.benza.smartrooms.data.room.model.RoomInvitation
 import com.benza.smartrooms.data.room.model.RoomOperationResult
+import com.benza.smartrooms.data.room.model.RoomQuiz
+import com.benza.smartrooms.data.room.model.RoomQuizQuestion
 import com.benza.smartrooms.data.room.model.RoomQuizSummary
 import kotlinx.coroutines.flow.Flow
 
@@ -51,6 +53,14 @@ internal interface RoomRepository {
     fun observeQuizzes(roomId: String): Flow<RoomOperationResult<List<RoomQuizSummary>>>
 
     /**
+     * Observes one generated quiz including all questions.
+     */
+    fun observeQuiz(
+        roomId: String,
+        quizId: String,
+    ): Flow<RoomOperationResult<RoomQuiz>>
+
+    /**
      * Observes announcements created for a room.
      */
     fun observeAnnouncements(roomId: String): Flow<RoomOperationResult<List<RoomAnnouncement>>>
@@ -84,4 +94,54 @@ internal interface RoomRepository {
      * Triggers backend quiz generation for the supplied room.
      */
     suspend fun generateQuiz(request: GenerateQuizRequest): RoomOperationResult<Unit>
+
+    /**
+     * Retries backend generation for an existing failed quiz.
+     */
+    suspend fun retryQuizGeneration(
+        roomId: String,
+        quizId: String,
+    ): RoomOperationResult<Unit>
+
+    /**
+     * Publishes a reviewed quiz so it becomes solvable.
+     */
+    suspend fun publishQuiz(
+        roomId: String,
+        quizId: String,
+    ): RoomOperationResult<Unit>
+
+    /**
+     * Deletes one quiz from the selected room.
+     */
+    suspend fun deleteQuiz(
+        roomId: String,
+        quizId: String,
+    ): RoomOperationResult<Unit>
+
+    /**
+     * Deletes multiple quizzes from the selected room in one operation.
+     */
+    suspend fun deleteQuizzes(
+        roomId: String,
+        quizIds: Collection<String>,
+    ): RoomOperationResult<Unit>
+
+    /**
+     * Saves a manually edited quiz question.
+     */
+    suspend fun updateQuizQuestion(
+        roomId: String,
+        quizId: String,
+        question: RoomQuizQuestion,
+    ): RoomOperationResult<Unit>
+
+    /**
+     * Deletes one question from the selected quiz.
+     */
+    suspend fun deleteQuizQuestion(
+        roomId: String,
+        quizId: String,
+        questionId: String,
+    ): RoomOperationResult<Unit>
 }

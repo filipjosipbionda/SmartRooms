@@ -6,5 +6,5 @@ package com.benza.smartrooms.data.userprofile.model
 internal enum class StartupDestination {
     LOGIN,
     ROLE_SELECTION,
-    HOME
+    HOME,
 }

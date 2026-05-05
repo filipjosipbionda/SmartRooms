@@ -38,6 +38,12 @@ internal data object RoleSelectionRoute : SmartRoomsDestination
 internal data object HomeRoute : SmartRoomsDestination
 
 /**
+ * Type-safe destination for dedicated room creation.
+ */
+@Serializable
+internal data object CreateRoomRoute : SmartRoomsDestination
+
+/**
  * Type-safe destination for the authenticated profile screen.
  */
 @Serializable
@@ -50,7 +56,7 @@ internal data object ProfileRoute : SmartRoomsDestination
 internal data class RoomDetailRoute(
     val roomId: String,
     val roomName: String,
-    val roomTopic: String
+    val roomTopic: String,
 ) : SmartRoomsDestination
 
 /**
@@ -60,5 +66,25 @@ internal data class RoomDetailRoute(
 internal data class RoomQuizBuilderRoute(
     val roomId: String,
     val roomName: String,
-    val roomTopic: String
+    val roomTopic: String,
+) : SmartRoomsDestination
+
+/**
+ * Type-safe destination for solving one generated quiz.
+ */
+@Serializable
+internal data class RoomQuizPlayerRoute(
+    val roomId: String,
+    val roomName: String,
+    val quizId: String,
+) : SmartRoomsDestination
+
+/**
+ * Type-safe destination for reviewing generated quizzes before publishing.
+ */
+@Serializable
+internal data class RoomQuizReviewRoute(
+    val roomId: String,
+    val roomName: String,
+    val quizId: String,
 ) : SmartRoomsDestination

@@ -28,17 +28,17 @@ internal data class RegisterUiState(
     val emailErrorRes: Int? = null,
     val passwordErrorRes: Int? = null,
     val confirmPasswordErrorRes: Int? = null,
-    val generalMessageRes: Int? = null
+    val generalMessageRes: Int? = null,
 )
 
 /**
  * Handles validation and Firebase-backed account creation.
  */
 internal class RegisterViewModel(
-    private val authRepository: AuthRepository
+    private val authRepository: AuthRepository,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(RegisterUiState())
-    internal val uiState: StateFlow<RegisterUiState> = _uiState.asStateFlow()
+    val uiState: StateFlow<RegisterUiState> = _uiState.asStateFlow()
 
     /**
      * Updates the full-name input and clears stale validation feedback.
@@ -48,7 +48,7 @@ internal class RegisterViewModel(
             it.copy(
                 fullName = value,
                 fullNameErrorRes = null,
-                generalMessageRes = null
+                generalMessageRes = null,
             )
         }
     }
@@ -61,7 +61,7 @@ internal class RegisterViewModel(
             it.copy(
                 email = value,
                 emailErrorRes = null,
-                generalMessageRes = null
+                generalMessageRes = null,
             )
         }
     }
@@ -75,7 +75,7 @@ internal class RegisterViewModel(
                 password = value,
                 passwordErrorRes = null,
                 confirmPasswordErrorRes = null,
-                generalMessageRes = null
+                generalMessageRes = null,
             )
         }
     }
@@ -88,7 +88,7 @@ internal class RegisterViewModel(
             it.copy(
                 confirmPassword = value,
                 confirmPasswordErrorRes = null,
-                generalMessageRes = null
+                generalMessageRes = null,
             )
         }
     }
@@ -114,31 +114,36 @@ internal class RegisterViewModel(
         val state = _uiState.value
         val fullName = state.fullName.trim()
         val email = state.email.trim()
-        val fullNameError = when {
-            fullName.isBlank() -> R.string.error_full_name_required
-            else -> null
-        }
-        val emailError = when {
-            email.isBlank() -> R.string.error_email_required
-            !Patterns.EMAIL_ADDRESS.matcher(email).matches() -> R.string.error_email_invalid
-            else -> null
-        }
-        val passwordError = when {
-            state.password.isBlank() -> R.string.error_password_required
-            state.password.length < 8 -> R.string.error_password_length
-            else -> null
-        }
-        val confirmPasswordError = if (state.confirmPassword != state.password) {
-            R.string.error_passwords_do_not_match
-        } else {
-            null
-        }
-        val isValid = listOf(
-            fullNameError,
-            emailError,
-            passwordError,
-            confirmPasswordError
-        ).all { it == null }
+        val fullNameError =
+            when {
+                fullName.isBlank() -> R.string.error_full_name_required
+                else -> null
+            }
+        val emailError =
+            when {
+                email.isBlank() -> R.string.error_email_required
+                !Patterns.EMAIL_ADDRESS.matcher(email).matches() -> R.string.error_email_invalid
+                else -> null
+            }
+        val passwordError =
+            when {
+                state.password.isBlank() -> R.string.error_password_required
+                state.password.length < 8 -> R.string.error_password_length
+                else -> null
+            }
+        val confirmPasswordError =
+            if (state.confirmPassword != state.password) {
+                R.string.error_passwords_do_not_match
+            } else {
+                null
+            }
+        val isValid =
+            listOf(
+                fullNameError,
+                emailError,
+                passwordError,
+                confirmPasswordError,
+            ).all { it == null }
 
         _uiState.update {
             it.copy(
@@ -148,7 +153,7 @@ internal class RegisterViewModel(
                 emailErrorRes = emailError,
                 passwordErrorRes = passwordError,
                 confirmPasswordErrorRes = confirmPasswordError,
-                generalMessageRes = if (isValid) null else R.string.error_review_account_details
+                generalMessageRes = if (isValid) null else R.string.error_review_account_details,
             )
         }
 
@@ -157,24 +162,25 @@ internal class RegisterViewModel(
         _uiState.update {
             it.copy(
                 isLoading = true,
-                generalMessageRes = null
+                generalMessageRes = null,
             )
         }
 
         viewModelScope.launch {
             when (
-                val result = authRepository.register(
-                    fullName = fullName,
-                    email = email,
-                    password = state.password
-                )
+                val result =
+                    authRepository.register(
+                        fullName = fullName,
+                        email = email,
+                        password = state.password,
+                    )
             ) {
                 is AuthOperationResult.Success -> {
                     _uiState.update {
                         it.copy(
                             isLoading = false,
                             isAuthenticated = true,
-                            generalMessageRes = null
+                            generalMessageRes = null,
                         )
                     }
                 }
@@ -183,7 +189,7 @@ internal class RegisterViewModel(
                     _uiState.update {
                         it.copy(
                             isLoading = false,
-                            generalMessageRes = result.messageRes
+                            generalMessageRes = result.messageRes,
                         )
                     }
                 }

@@ -5,8 +5,8 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Visibility
 import androidx.compose.material.icons.outlined.VisibilityOff
@@ -26,9 +26,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.benza.smartrooms.R
 
@@ -45,7 +45,7 @@ internal fun AuthTextField(
     supportingText: String? = null,
     singleLine: Boolean = true,
     trailingIcon: (@Composable () -> Unit)? = null,
-    visualTransformation: VisualTransformation = VisualTransformation.None
+    visualTransformation: VisualTransformation = VisualTransformation.None,
 ) {
     OutlinedTextField(
         value = value,
@@ -57,7 +57,7 @@ internal fun AuthTextField(
         supportingText = supportingText?.let { { Text(it) } },
         singleLine = singleLine,
         visualTransformation = visualTransformation,
-        trailingIcon = trailingIcon
+        trailingIcon = trailingIcon,
     )
 }
 
@@ -73,7 +73,7 @@ internal fun PasswordField(
     onVisibilityToggle: () -> Unit,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
-    supportingText: String? = null
+    supportingText: String? = null,
 ) {
     AuthTextField(
         value = value,
@@ -85,25 +85,28 @@ internal fun PasswordField(
         trailingIcon = {
             IconButton(
                 onClick = onVisibilityToggle,
-                enabled = enabled
+                enabled = enabled,
             ) {
                 Icon(
-                    imageVector = if (passwordVisible) {
-                        Icons.Outlined.VisibilityOff
-                    } else {
-                        Icons.Outlined.Visibility
-                    },
-                    contentDescription = stringResource(
-                        if (passwordVisible) R.string.action_hide else R.string.action_show
-                    )
+                    imageVector =
+                        if (passwordVisible) {
+                            Icons.Outlined.VisibilityOff
+                        } else {
+                            Icons.Outlined.Visibility
+                        },
+                    contentDescription =
+                        stringResource(
+                            if (passwordVisible) R.string.action_hide else R.string.action_show,
+                        ),
                 )
             }
         },
-        visualTransformation = if (passwordVisible) {
-            VisualTransformation.None
-        } else {
-            PasswordVisualTransformation()
-        }
+        visualTransformation =
+            if (passwordVisible) {
+                VisualTransformation.None
+            } else {
+                PasswordVisualTransformation()
+            },
     )
 }
 
@@ -116,27 +119,28 @@ internal fun AuthPrimaryButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
-    loading: Boolean = false
+    loading: Boolean = false,
 ) {
     Button(
         onClick = onClick,
         enabled = enabled,
         modifier = modifier.fillMaxWidth(),
-        colors = ButtonDefaults.buttonColors(
-            containerColor = MaterialTheme.colorScheme.primary
-        )
+        colors =
+            ButtonDefaults.buttonColors(
+                containerColor = MaterialTheme.colorScheme.primary,
+            ),
     ) {
         if (loading) {
             CircularProgressIndicator(
                 modifier = Modifier.size(18.dp),
                 strokeWidth = 2.dp,
-                color = MaterialTheme.colorScheme.onPrimary
+                color = MaterialTheme.colorScheme.onPrimary,
             )
             Spacer(modifier = Modifier.size(10.dp))
         }
         Text(
             text = text,
-            modifier = Modifier.padding(vertical = 6.dp)
+            modifier = Modifier.padding(vertical = 6.dp),
         )
     }
 }
@@ -146,7 +150,7 @@ internal fun AuthPrimaryButton(
  */
 internal enum class AuthFeedbackType {
     Error,
-    Success
+    Success,
 }
 
 /**
@@ -156,7 +160,7 @@ internal enum class AuthFeedbackType {
 internal fun AuthFeedbackBanner(
     message: String,
     type: AuthFeedbackType,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
 ) {
     val containerColor: Color
     val contentColor: Color
@@ -178,22 +182,22 @@ internal fun AuthFeedbackBanner(
 
     Card(
         modifier = modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = containerColor)
+        colors = CardDefaults.cardColors(containerColor = containerColor),
     ) {
         Column(
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp)
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
         ) {
             Text(
                 text = title,
                 style = MaterialTheme.typography.labelLarge,
                 color = contentColor,
-                fontWeight = FontWeight.Bold
+                fontWeight = FontWeight.Bold,
             )
             Text(
                 text = message,
                 style = MaterialTheme.typography.bodyMedium,
                 color = contentColor,
-                modifier = Modifier.padding(top = 4.dp)
+                modifier = Modifier.padding(top = 4.dp),
             )
         }
     }
@@ -208,17 +212,17 @@ internal fun InlineActionText(
     actionText: String,
     onActionClick: () -> Unit,
     modifier: Modifier = Modifier,
-    enabled: Boolean = true
+    enabled: Boolean = true,
 ) {
     Row(
         modifier = modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.Center,
-        verticalAlignment = Alignment.CenterVertically
+        verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
             text = leadingText,
             style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         TextButton(onClick = onActionClick, enabled = enabled) {
             Text(actionText)

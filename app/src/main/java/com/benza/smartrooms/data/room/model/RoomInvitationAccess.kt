@@ -5,5 +5,5 @@ package com.benza.smartrooms.data.room.model
  */
 internal enum class RoomInvitationAccess {
     MEMBER,
-    COLLABORATOR
+    COLLABORATOR,
 }

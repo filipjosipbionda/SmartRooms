@@ -11,5 +11,5 @@ internal data class CreateRoomInvitationRequest(
     val inviteeId: String,
     val inviteeEmail: String,
     val inviteeDisplayName: String,
-    val access: RoomInvitationAccess
+    val access: RoomInvitationAccess,
 )

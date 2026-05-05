@@ -10,12 +10,19 @@ internal interface AuthRepository {
     /**
      * Attempts to authenticate a user with email and password.
      */
-    suspend fun login(email: String, password: String): AuthOperationResult<AuthUser>
+    suspend fun login(
+        email: String,
+        password: String,
+    ): AuthOperationResult<AuthUser>
 
     /**
      * Creates a new account and populates the user's display name.
      */
-    suspend fun register(fullName: String, email: String, password: String): AuthOperationResult<AuthUser>
+    suspend fun register(
+        fullName: String,
+        email: String,
+        password: String,
+    ): AuthOperationResult<AuthUser>
 
     /**
      * Triggers a password reset email flow for the supplied address.

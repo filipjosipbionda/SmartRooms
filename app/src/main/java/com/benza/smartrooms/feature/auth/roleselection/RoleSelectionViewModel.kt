@@ -24,11 +24,12 @@ internal data class RoleSelectionUiState(
     val teacherApprovalStatus: TeacherApprovalStatus = TeacherApprovalStatus.NONE,
     val isLoading: Boolean = false,
     val isRefreshing: Boolean = true,
-    val errorMessageRes: Int? = null
+    val errorMessageRes: Int? = null,
 )
 
 internal sealed interface RoleSelectionEvent {
     data object NavigateToHome : RoleSelectionEvent
+
     data object NavigateToLogin : RoleSelectionEvent
 }
 
@@ -37,24 +38,26 @@ internal sealed interface RoleSelectionEvent {
  */
 internal class RoleSelectionViewModel(
     private val authRepository: AuthRepository,
-    private val userProfileRepository: UserProfileRepository
+    private val userProfileRepository: UserProfileRepository,
 ) : ViewModel() {
     private val currentUser = authRepository.getCurrentUser()
     private var hasPendingNavigation = false
 
-    private val _uiState = MutableStateFlow(
-        RoleSelectionUiState(
-            displayName = currentUser.displayNameOrFallback(),
-            email = currentUser?.email.orEmpty()
+    private val _uiState =
+        MutableStateFlow(
+            RoleSelectionUiState(
+                displayName = currentUser.displayNameOrFallback(),
+                email = currentUser?.email.orEmpty(),
+            ),
         )
-    )
-    internal val uiState: StateFlow<RoleSelectionUiState> = _uiState.asStateFlow()
+    val uiState: StateFlow<RoleSelectionUiState> = _uiState.asStateFlow()
 
-    private val _events = MutableSharedFlow<RoleSelectionEvent>(
-        extraBufferCapacity = 1,
-        onBufferOverflow = BufferOverflow.DROP_OLDEST
-    )
-    internal val events: SharedFlow<RoleSelectionEvent> = _events.asSharedFlow()
+    private val _events =
+        MutableSharedFlow<RoleSelectionEvent>(
+            extraBufferCapacity = 1,
+            onBufferOverflow = BufferOverflow.DROP_OLDEST,
+        )
+    val events: SharedFlow<RoleSelectionEvent> = _events.asSharedFlow()
 
     init {
         refreshProfile()
@@ -62,16 +65,17 @@ internal class RoleSelectionViewModel(
     }
 
     internal fun selectStudentRole() {
-        val user = currentUser ?: run {
-            _uiState.update { it.copy(errorMessageRes = R.string.error_user_profile_auth_required) }
-            return
-        }
+        val user =
+            currentUser ?: run {
+                _uiState.update { it.copy(errorMessageRes = R.string.error_user_profile_auth_required) }
+                return
+            }
         if (_uiState.value.isLoading) return
 
         _uiState.update {
             it.copy(
                 isLoading = true,
-                errorMessageRes = null
+                errorMessageRes = null,
             )
         }
 
@@ -80,7 +84,7 @@ internal class RoleSelectionViewModel(
                 is UserProfileOperationResult.Success -> {
                     _uiState.update {
                         it.copy(
-                            isLoading = false
+                            isLoading = false,
                         )
                     }
                     emitNavigationEvent(RoleSelectionEvent.NavigateToHome)
@@ -90,7 +94,7 @@ internal class RoleSelectionViewModel(
                     _uiState.update {
                         it.copy(
                             isLoading = false,
-                            errorMessageRes = result.messageRes
+                            errorMessageRes = result.messageRes,
                         )
                     }
                 }
@@ -99,16 +103,17 @@ internal class RoleSelectionViewModel(
     }
 
     internal fun submitTeacherRequest() {
-        val user = currentUser ?: run {
-            _uiState.update { it.copy(errorMessageRes = R.string.error_user_profile_auth_required) }
-            return
-        }
+        val user =
+            currentUser ?: run {
+                _uiState.update { it.copy(errorMessageRes = R.string.error_user_profile_auth_required) }
+                return
+            }
         if (_uiState.value.isLoading) return
 
         _uiState.update {
             it.copy(
                 isLoading = true,
-                errorMessageRes = null
+                errorMessageRes = null,
             )
         }
 
@@ -118,7 +123,7 @@ internal class RoleSelectionViewModel(
                     _uiState.update {
                         it.copy(
                             isLoading = false,
-                            teacherApprovalStatus = TeacherApprovalStatus.PENDING
+                            teacherApprovalStatus = TeacherApprovalStatus.PENDING,
                         )
                     }
                 }
@@ -127,7 +132,7 @@ internal class RoleSelectionViewModel(
                     _uiState.update {
                         it.copy(
                             isLoading = false,
-                            errorMessageRes = result.messageRes
+                            errorMessageRes = result.messageRes,
                         )
                     }
                 }
@@ -136,20 +141,21 @@ internal class RoleSelectionViewModel(
     }
 
     internal fun refreshProfile() {
-        val user = currentUser ?: run {
-            _uiState.update {
-                it.copy(
-                    isRefreshing = false,
-                    errorMessageRes = R.string.error_user_profile_auth_required
-                )
+        val user =
+            currentUser ?: run {
+                _uiState.update {
+                    it.copy(
+                        isRefreshing = false,
+                        errorMessageRes = R.string.error_user_profile_auth_required,
+                    )
+                }
+                return
             }
-            return
-        }
 
         _uiState.update {
             it.copy(
                 isRefreshing = true,
-                errorMessageRes = null
+                errorMessageRes = null,
             )
         }
 
@@ -161,7 +167,7 @@ internal class RoleSelectionViewModel(
                             displayName = result.data.displayName,
                             email = result.data.email,
                             teacherApprovalStatus = result.data.teacherApprovalStatus,
-                            isRefreshing = false
+                            isRefreshing = false,
                         )
                     }
                     if (result.data.profileComplete && result.data.role != null) {
@@ -173,7 +179,7 @@ internal class RoleSelectionViewModel(
                     _uiState.update {
                         it.copy(
                             isRefreshing = false,
-                            errorMessageRes = result.messageRes
+                            errorMessageRes = result.messageRes,
                         )
                     }
                 }
@@ -195,7 +201,7 @@ internal class RoleSelectionViewModel(
                                 teacherApprovalStatus = result.data.teacherApprovalStatus,
                                 isRefreshing = false,
                                 isLoading = false,
-                                errorMessageRes = null
+                                errorMessageRes = null,
                             )
                         }
                         if (result.data.profileComplete && result.data.role != null) {
@@ -208,7 +214,7 @@ internal class RoleSelectionViewModel(
                             it.copy(
                                 isRefreshing = false,
                                 isLoading = false,
-                                errorMessageRes = result.messageRes
+                                errorMessageRes = result.messageRes,
                             )
                         }
                     }
@@ -230,8 +236,8 @@ internal class RoleSelectionViewModel(
     }
 }
 
-private fun AuthUser?.displayNameOrFallback(): String {
-    return this?.displayName
+private fun AuthUser?.displayNameOrFallback(): String =
+    this
+        ?.displayName
         ?.takeIf(String::isNotBlank)
         ?: this?.email?.substringBefore("@").orEmpty()
-}
