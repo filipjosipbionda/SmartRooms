@@ -426,7 +426,7 @@ private fun MultipleChoiceQuestionCard(
                 when {
                     !isQuizCompleted && isSelected -> MaterialTheme.colorScheme.secondaryContainer
                     isQuizCompleted && isCorrectOption -> MaterialTheme.colorScheme.primaryContainer
-                    isQuizCompleted && isSelected && !isCorrectOption -> MaterialTheme.colorScheme.errorContainer
+                    isQuizCompleted && isSelected -> MaterialTheme.colorScheme.errorContainer
                     else -> MaterialTheme.colorScheme.surface
                 }
 
@@ -504,11 +504,6 @@ private fun WordScrambleQuestionCard(
 ) {
     val tiles = remember(question) { question.buildScrambleTiles() }
     val tilesById = remember(tiles) { tiles.associateBy(ScrambleTile::id) }
-    val currentAnswer =
-        answerSlots
-            .mapNotNull(tilesById::get)
-            .map(ScrambleTile::letter)
-            .joinToString(separator = "")
     val availableTiles = tiles.filter { tile -> tile.id !in answerSlots.filterNotNull() }
     val slotBounds = remember { mutableStateMapOf<Int, Rect>() }
     var bankBounds by remember { mutableStateOf<Rect?>(null) }
