@@ -385,7 +385,7 @@ internal class FirestoreRoomDataSource(
         val updatedQuestions =
             snapshot
                 .getQuestionList(QUESTIONS_FIELD)
-                .map { it.toMutableMap<Any?, Any?>() }
+                .map { it.toMutableMap() }
                 .toMutableList()
         val targetIndex = updatedQuestions.indexOfFirst { (it[ID_FIELD] as? String) == question.id }
 
@@ -422,7 +422,7 @@ internal class FirestoreRoomDataSource(
         val updatedQuestions =
             snapshot
                 .getQuestionList(QUESTIONS_FIELD)
-                .map { it.toMutableMap<Any?, Any?>() }
+                .map { it.toMutableMap() }
                 .filterNot { (it[ID_FIELD] as? String) == questionId }
 
         quizDocument
@@ -447,12 +447,7 @@ private fun DocumentSnapshot.toQuizSummary(): RoomQuizSummary? {
     return RoomQuizSummary(
         id = id,
         clientRequestId = getString(QUIZ_CLIENT_REQUEST_ID_FIELD).orEmpty(),
-        title =
-            title.normalizeQuizTitle(
-                hasGeneratedContent = hasGeneratedContent,
-                quizKind = quizKind,
-                topic = topic,
-            ),
+        title = title.normalizeQuizTitle(),
         quizKind = quizKind,
         topic = topic,
         vocabularyWords = getStringList(QUIZ_VOCABULARY_WORDS_FIELD),
@@ -486,12 +481,7 @@ private fun DocumentSnapshot.toQuiz(): RoomQuiz? {
 
     return RoomQuiz(
         id = id,
-        title =
-            title.normalizeQuizTitle(
-                hasGeneratedContent = hasGeneratedContent,
-                quizKind = quizKind,
-                topic = topic,
-            ),
+        title = title.normalizeQuizTitle(),
         quizKind = quizKind,
         topic = topic,
         vocabularyWords = getStringList(QUIZ_VOCABULARY_WORDS_FIELD),
@@ -576,11 +566,7 @@ private fun RoomQuizStatus.normalizeQuizStatus(hasGeneratedContent: Boolean): Ro
         this
     }
 
-private fun String.normalizeQuizTitle(
-    hasGeneratedContent: Boolean,
-    quizKind: QuizKind,
-    topic: String,
-): String {
+private fun String.normalizeQuizTitle(): String {
     val normalizedTitle = ifBlank { DEFAULT_GENERATING_QUIZ_TITLE }
     return normalizedTitle
 }
@@ -751,11 +737,7 @@ private const val OWNER_ID_FIELD = "ownerId"
 private const val OWNER_NAME_FIELD = "ownerName"
 private const val MEMBER_IDS_FIELD = "memberIds"
 private const val COLLABORATOR_IDS_FIELD = "collaboratorIds"
-private const val INVITER_ID_FIELD = "inviterId"
 private const val INVITER_NAME_FIELD = "inviterName"
-private const val INVITEE_ID_FIELD = "inviteeId"
-private const val INVITEE_EMAIL_FIELD = "inviteeEmail"
-private const val INVITEE_DISPLAY_NAME_FIELD = "inviteeDisplayName"
 private const val INVITATION_ACCESS_FIELD = "access"
 private const val INVITATION_STATUS_FIELD = "status"
 private const val PENDING_INVITATION_STATUS = "pending"
