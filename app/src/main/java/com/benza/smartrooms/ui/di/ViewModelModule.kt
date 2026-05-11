@@ -5,6 +5,7 @@ import com.benza.smartrooms.feature.auth.forgotpassword.ForgotPasswordViewModel
 import com.benza.smartrooms.feature.auth.login.LoginViewModel
 import com.benza.smartrooms.feature.auth.register.RegisterViewModel
 import com.benza.smartrooms.feature.auth.roleselection.RoleSelectionViewModel
+import com.benza.smartrooms.feature.createpost.CreatePostViewModel
 import com.benza.smartrooms.feature.createroom.CreateRoomViewModel
 import com.benza.smartrooms.feature.home.HomeViewModel
 import com.benza.smartrooms.feature.profile.ProfileViewModel
@@ -28,9 +29,12 @@ internal val viewModelModule =
         viewModelOf(::RoleSelectionViewModel)
         viewModelOf(::HomeViewModel)
         viewModelOf(::CreateRoomViewModel)
+        viewModel { (roomId: String, roomName: String, announcementId: String?) ->
+            CreatePostViewModel(roomId, roomName, announcementId, get(), get())
+        }
         viewModelOf(::ProfileViewModel)
-        viewModel { (roomId: String, roomName: String, roomTopic: String) ->
-            RoomDetailViewModel(roomId, roomName, roomTopic, get(), get(), get())
+        viewModel { (roomId: String, roomName: String, roomTopic: String, roomCefrLevel: String) ->
+            RoomDetailViewModel(roomId, roomName, roomTopic, roomCefrLevel, get(), get(), get())
         }
         viewModel { (roomId: String, roomName: String, roomTopic: String) ->
             RoomQuizBuilderViewModel(roomId, roomName, roomTopic, get())

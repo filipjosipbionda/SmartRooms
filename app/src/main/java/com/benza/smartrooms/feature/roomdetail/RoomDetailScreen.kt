@@ -1,7 +1,13 @@
 package com.benza.smartrooms.feature.roomdetail
 
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
@@ -12,8 +18,12 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.outlined.Campaign
 import androidx.compose.material.icons.outlined.PersonAdd
 import androidx.compose.material.icons.outlined.Quiz
@@ -22,6 +32,8 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -35,7 +47,10 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
@@ -46,14 +61,17 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.benza.smartrooms.R
 import com.benza.smartrooms.data.room.model.QuestionType
 import com.benza.smartrooms.data.room.model.RoomInvitationAccess
 import com.benza.smartrooms.data.room.model.RoomQuizStatus
 import com.benza.smartrooms.data.userprofile.model.UserRole
+import com.benza.smartrooms.ui.components.AttachmentPreview
 import com.benza.smartrooms.ui.components.AuthFeedbackBanner
 import com.benza.smartrooms.ui.components.AuthFeedbackType
+import com.benza.smartrooms.ui.components.attachmentTypeLabel
 import com.benza.smartrooms.ui.theme.Coral
 import com.benza.smartrooms.ui.theme.Lagoon
 import com.benza.smartrooms.ui.theme.SmartRoomsTheme
@@ -69,12 +87,15 @@ internal fun RoomDetailRouteScreen(
     roomId: String,
     roomName: String,
     roomTopic: String,
+    roomCefrLevel: String,
     onBackClick: () -> Unit,
+    onCreatePostClick: () -> Unit,
+    onEditPostClick: (String) -> Unit,
     onOpenQuizClick: (String) -> Unit,
     onOpenQuizzesClick: () -> Unit,
     viewModel: RoomDetailViewModel =
         koinViewModel(
-            parameters = { parametersOf(roomId, roomName, roomTopic) },
+            parameters = { parametersOf(roomId, roomName, roomTopic, roomCefrLevel) },
         ),
 ) {
     val uiState = viewModel.uiState.collectAsStateWithLifecycle()
@@ -82,17 +103,17 @@ internal fun RoomDetailRouteScreen(
     RoomDetailScreen(
         uiState = uiState.value,
         onBackClick = onBackClick,
+        onCreatePostClick = onCreatePostClick,
+        onEditPostClick = onEditPostClick,
         onOpenQuizClick = onOpenQuizClick,
         onOpenQuizzesClick = onOpenQuizzesClick,
-        onShowCreateAnnouncementDialog = viewModel::showCreateAnnouncementDialog,
-        onDismissCreateAnnouncementDialog = viewModel::dismissCreateAnnouncementDialog,
-        onAnnouncementTitleChange = viewModel::onAnnouncementTitleChanged,
-        onAnnouncementMessageChange = viewModel::onAnnouncementMessageChanged,
-        onCreateAnnouncementClick = viewModel::createAnnouncement,
         onShowInviteDialog = viewModel::showInviteDialog,
         onDismissInviteDialog = viewModel::dismissInviteDialog,
         onInviteSearchQueryChange = viewModel::onInviteSearchQueryChanged,
         onSendInviteClick = viewModel::sendInvite,
+        onRequestAnnouncementDeletionClick = viewModel::requestAnnouncementDeletion,
+        onDismissAnnouncementDeletion = viewModel::dismissAnnouncementDeletion,
+        onDeleteAnnouncementClick = viewModel::deleteAnnouncement,
         onInfoMessageShown = viewModel::consumeInfoMessage,
     )
 }
@@ -101,17 +122,17 @@ internal fun RoomDetailRouteScreen(
 internal fun RoomDetailScreen(
     uiState: RoomDetailUiState,
     onBackClick: () -> Unit,
+    onCreatePostClick: () -> Unit,
+    onEditPostClick: (String) -> Unit,
     onOpenQuizClick: (String) -> Unit,
     onOpenQuizzesClick: () -> Unit,
-    onShowCreateAnnouncementDialog: () -> Unit,
-    onDismissCreateAnnouncementDialog: () -> Unit,
-    onAnnouncementTitleChange: (String) -> Unit,
-    onAnnouncementMessageChange: (String) -> Unit,
-    onCreateAnnouncementClick: () -> Unit,
     onShowInviteDialog: () -> Unit,
     onDismissInviteDialog: () -> Unit,
     onInviteSearchQueryChange: (String) -> Unit,
     onSendInviteClick: (InviteUserUiState) -> Unit,
+    onRequestAnnouncementDeletionClick: (RoomFeedItemUiState.Announcement) -> Unit,
+    onDismissAnnouncementDeletion: () -> Unit,
+    onDeleteAnnouncementClick: () -> Unit,
     onInfoMessageShown: () -> Unit,
 ) {
     val snackbarHostState = remember { SnackbarHostState() }
@@ -147,7 +168,9 @@ internal fun RoomDetailScreen(
                     cefrLevel = uiState.cefrLevel,
                     postCount = uiState.feedItems.count { it is RoomFeedItemUiState.Announcement },
                     quizCount = uiState.feedItems.count { it is RoomFeedItemUiState.Quiz },
-                    onCreateAnnouncementClick = onShowCreateAnnouncementDialog,
+                    isLoadingRoom = uiState.isLoadingRoom,
+                    isLoadingFeed = uiState.isLoadingFeed,
+                    onCreateAnnouncementClick = onCreatePostClick,
                     onOpenQuizzesClick = onOpenQuizzesClick,
                     onInviteClick = onShowInviteDialog,
                     showInviteAction = uiState.isCurrentUserOwner,
@@ -162,26 +185,48 @@ internal fun RoomDetailScreen(
                 }
             }
             item {
-                FeedSection(
-                    feedItems = uiState.feedItems,
-                    isLoading = uiState.isLoadingFeed,
-                    onOpenQuizClick = onOpenQuizClick,
-                )
+                FeedSectionHeader()
+            }
+            when {
+                uiState.isLoadingFeed && uiState.feedItems.isEmpty() -> {
+                    item {
+                        FeedLoadingSkeleton()
+                    }
+                }
+
+                uiState.feedItems.isEmpty() -> {
+                    item {
+                        FeedPlaceholderCard(text = stringResource(R.string.room_detail_feed_empty))
+                    }
+                }
+
+                else -> {
+                    items(
+                        items = uiState.feedItems,
+                        key = ::feedItemKey,
+                        contentType = ::feedItemContentType,
+                    ) { item ->
+                        when (item) {
+                            is RoomFeedItemUiState.Announcement ->
+                                AnnouncementFeedCard(
+                                    item = item,
+                                    onEditClick = { onEditPostClick(item.id) },
+                                    onDeleteClick = { onRequestAnnouncementDeletionClick(item) },
+                                )
+
+                            is RoomFeedItemUiState.Quiz ->
+                                QuizFeedCard(
+                                    item = item,
+                                    onOpenQuizClick = onOpenQuizClick,
+                                )
+                        }
+                    }
+                }
             }
             item {
                 Spacer(modifier = Modifier.height(8.dp))
             }
         }
-    }
-
-    if (uiState.isCreateAnnouncementDialogOpen) {
-        CreateAnnouncementDialog(
-            uiState = uiState,
-            onTitleChange = onAnnouncementTitleChange,
-            onMessageChange = onAnnouncementMessageChange,
-            onDismiss = onDismissCreateAnnouncementDialog,
-            onConfirm = onCreateAnnouncementClick,
-        )
     }
 
     if (uiState.isInviteDialogOpen) {
@@ -190,6 +235,15 @@ internal fun RoomDetailScreen(
             onSearchQueryChange = onInviteSearchQueryChange,
             onSendInviteClick = onSendInviteClick,
             onDismiss = onDismissInviteDialog,
+        )
+    }
+
+    if (uiState.pendingAnnouncementDeletion != null) {
+        DeleteAnnouncementDialog(
+            pendingDeletion = uiState.pendingAnnouncementDeletion,
+            isDeleting = uiState.isDeletingAnnouncement,
+            onDismiss = onDismissAnnouncementDeletion,
+            onConfirm = onDeleteAnnouncementClick,
         )
     }
 }
@@ -232,6 +286,8 @@ private fun RoomSummaryCard(
     cefrLevel: String,
     postCount: Int,
     quizCount: Int,
+    isLoadingRoom: Boolean,
+    isLoadingFeed: Boolean,
     onCreateAnnouncementClick: () -> Unit,
     onOpenQuizzesClick: () -> Unit,
     onInviteClick: () -> Unit,
@@ -260,12 +316,19 @@ private fun RoomSummaryCard(
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text(
-                    text = stringResource(R.string.room_detail_topic_value, roomTopic),
-                    style = MaterialTheme.typography.titleMedium,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
+                if (isLoadingRoom && roomTopic.isBlank()) {
+                    SkeletonLine(
+                        widthFraction = 0.62f,
+                        height = 20.dp,
+                    )
+                } else {
+                    Text(
+                        text = stringResource(R.string.room_detail_topic_value, roomTopic),
+                        style = MaterialTheme.typography.titleMedium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
                 Text(
                     text = stringResource(R.string.room_detail_feed_subtitle),
                     style = MaterialTheme.typography.bodyMedium,
@@ -276,24 +339,39 @@ private fun RoomSummaryCard(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                SummaryMetricCard(
-                    modifier = Modifier.weight(1f),
-                    value = postCount.toString(),
-                    label = stringResource(R.string.room_detail_feed_posts_metric),
-                )
-                SummaryMetricCard(
-                    modifier = Modifier.weight(1f),
-                    value = quizCount.toString(),
-                    label = stringResource(R.string.room_detail_feed_quizzes_metric),
-                )
-                SummaryMetricCard(
-                    modifier = Modifier.weight(1f),
-                    value =
-                        cefrLevel.ifBlank {
-                            stringResource(R.string.room_detail_level_not_set)
-                        },
-                    label = stringResource(R.string.room_detail_feed_level_metric),
-                )
+                if (isLoadingFeed) {
+                    SummaryMetricSkeletonCard(
+                        modifier = Modifier.weight(1f),
+                    )
+                    SummaryMetricSkeletonCard(
+                        modifier = Modifier.weight(1f),
+                    )
+                } else {
+                    SummaryMetricCard(
+                        modifier = Modifier.weight(1f),
+                        value = postCount.toString(),
+                        label = stringResource(R.string.room_detail_feed_posts_metric),
+                    )
+                    SummaryMetricCard(
+                        modifier = Modifier.weight(1f),
+                        value = quizCount.toString(),
+                        label = stringResource(R.string.room_detail_feed_quizzes_metric),
+                    )
+                }
+                if (isLoadingRoom) {
+                    SummaryMetricSkeletonCard(
+                        modifier = Modifier.weight(1f),
+                    )
+                } else {
+                    SummaryMetricCard(
+                        modifier = Modifier.weight(1f),
+                        value =
+                            cefrLevel.ifBlank {
+                                stringResource(R.string.room_detail_level_not_set)
+                            },
+                        label = stringResource(R.string.room_detail_feed_level_metric),
+                    )
+                }
             }
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -330,6 +408,22 @@ private fun RoomSummaryCard(
                     )
                     Spacer(modifier = Modifier.size(10.dp))
                     Text(stringResource(R.string.action_invite_to_room))
+                }
+            } else if (isLoadingRoom) {
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = MaterialTheme.shapes.large,
+                    color = MaterialTheme.colorScheme.background.copy(alpha = 0.88f),
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 13.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        SkeletonLine(
+                            widthFraction = 0.42f,
+                            height = 14.dp,
+                        )
+                    }
                 }
             }
         }
@@ -369,11 +463,60 @@ private fun SummaryMetricCard(
 }
 
 @Composable
-private fun FeedSection(
-    feedItems: List<RoomFeedItemUiState>,
-    isLoading: Boolean,
-    onOpenQuizClick: (String) -> Unit,
+private fun SummaryMetricSkeletonCard(modifier: Modifier = Modifier) {
+    Surface(
+        modifier = modifier,
+        shape = MaterialTheme.shapes.large,
+        color = MaterialTheme.colorScheme.background.copy(alpha = 0.88f),
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            SkeletonLine(
+                widthFraction = 0.44f,
+                height = 20.dp,
+            )
+            SkeletonLine(
+                widthFraction = 0.66f,
+                height = 10.dp,
+            )
+        }
+    }
+}
+
+@Composable
+private fun SkeletonLine(
+    widthFraction: Float,
+    height: androidx.compose.ui.unit.Dp,
+    modifier: Modifier = Modifier,
 ) {
+    val transition = rememberInfiniteTransition(label = "roomSkeleton")
+    val alpha by transition.animateFloat(
+        initialValue = 0.42f,
+        targetValue = 0.82f,
+        animationSpec =
+            infiniteRepeatable(
+                animation = tween(durationMillis = 900),
+                repeatMode = RepeatMode.Reverse,
+            ),
+        label = "roomSkeletonAlpha",
+    )
+
+    Surface(
+        modifier = modifier.fillMaxWidth(widthFraction),
+        shape = MaterialTheme.shapes.small,
+        color = MaterialTheme.colorScheme.onSurface.copy(alpha = alpha * 0.12f),
+    ) {
+        Box(
+            modifier = Modifier.fillMaxWidth().height(height),
+        )
+    }
+}
+
+@Composable
+private fun FeedSectionHeader() {
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text(
@@ -386,33 +529,20 @@ private fun FeedSection(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
-
-        when {
-            isLoading -> {
-                FeedPlaceholderCard(text = stringResource(R.string.room_detail_feed_loading))
-            }
-
-            feedItems.isEmpty() -> {
-                FeedPlaceholderCard(text = stringResource(R.string.room_detail_feed_empty))
-            }
-
-            else -> {
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    feedItems.forEach { item ->
-                        when (item) {
-                            is RoomFeedItemUiState.Announcement -> AnnouncementFeedCard(item)
-                            is RoomFeedItemUiState.Quiz ->
-                                QuizFeedCard(
-                                    item = item,
-                                    onOpenQuizClick = onOpenQuizClick,
-                                )
-                        }
-                    }
-                }
-            }
-        }
     }
 }
+
+private fun feedItemKey(item: RoomFeedItemUiState): String =
+    when (item) {
+        is RoomFeedItemUiState.Announcement -> "announcement:${item.id}"
+        is RoomFeedItemUiState.Quiz -> "quiz:${item.id}"
+    }
+
+private fun feedItemContentType(item: RoomFeedItemUiState): String =
+    when (item) {
+        is RoomFeedItemUiState.Announcement -> "announcement"
+        is RoomFeedItemUiState.Quiz -> "quiz"
+    }
 
 @Composable
 private fun FeedPlaceholderCard(text: String) {
@@ -430,7 +560,119 @@ private fun FeedPlaceholderCard(text: String) {
 }
 
 @Composable
-private fun AnnouncementFeedCard(item: RoomFeedItemUiState.Announcement) {
+private fun FeedLoadingSkeleton() {
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        FeedSkeletonCard(
+            accentBrush =
+                Brush.horizontalGradient(
+                    listOf(
+                        Lagoon.copy(alpha = 0.14f),
+                        MaterialTheme.colorScheme.surface,
+                    ),
+                ),
+            showAction = false,
+        )
+        FeedSkeletonCard(
+            accentBrush =
+                Brush.horizontalGradient(
+                    listOf(
+                        Coral.copy(alpha = 0.12f),
+                        MaterialTheme.colorScheme.surface,
+                    ),
+                ),
+            showAction = true,
+        )
+    }
+}
+
+@Composable
+private fun FeedSkeletonCard(
+    accentBrush: Brush,
+    showAction: Boolean,
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.extraLarge,
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+    ) {
+        Column(
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .background(accentBrush)
+                    .padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                SkeletonLine(
+                    widthFraction = 0.28f,
+                    height = 32.dp,
+                )
+                SkeletonLine(
+                    widthFraction = 0.18f,
+                    height = 12.dp,
+                )
+            }
+            SkeletonLine(
+                widthFraction = 0.52f,
+                height = 20.dp,
+            )
+            SkeletonLine(
+                widthFraction = 0.92f,
+                height = 14.dp,
+            )
+            SkeletonLine(
+                widthFraction = 0.74f,
+                height = 14.dp,
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                repeat(3) {
+                    Surface(
+                        modifier = Modifier.weight(1f),
+                        shape = MaterialTheme.shapes.large,
+                        color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.24f),
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 10.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                        ) {
+                            SkeletonLine(
+                                widthFraction = 0.46f,
+                                height = 16.dp,
+                            )
+                            SkeletonLine(
+                                widthFraction = 0.68f,
+                                height = 10.dp,
+                            )
+                        }
+                    }
+                }
+            }
+            if (showAction) {
+                SkeletonLine(
+                    widthFraction = 1f,
+                    height = 40.dp,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun AnnouncementFeedCard(
+    item: RoomFeedItemUiState.Announcement,
+    onEditClick: () -> Unit,
+    onDeleteClick: () -> Unit,
+) {
+    var isMenuExpanded by remember(item.id) { mutableStateOf(false) }
     FeedCardShell(
         icon = Icons.Outlined.Campaign,
         label = stringResource(R.string.room_detail_feed_post),
@@ -442,6 +684,56 @@ private fun AnnouncementFeedCard(item: RoomFeedItemUiState.Announcement) {
                     MaterialTheme.colorScheme.surface,
                 ),
             ),
+        actions =
+            if (item.canManage) {
+                {
+                    Column(horizontalAlignment = Alignment.End) {
+                        IconButton(onClick = { isMenuExpanded = true }) {
+                            Icon(
+                                imageVector = Icons.Filled.MoreVert,
+                                contentDescription = stringResource(R.string.room_detail_post_actions_menu),
+                            )
+                        }
+                        DropdownMenu(
+                            expanded = isMenuExpanded,
+                            onDismissRequest = { isMenuExpanded = false },
+                            shape = MaterialTheme.shapes.extraLarge,
+                            containerColor = MaterialTheme.colorScheme.surface,
+                            tonalElevation = 8.dp,
+                            shadowElevation = 10.dp,
+                        ) {
+                            DropdownMenuItem(
+                                leadingIcon = {
+                                    Icon(
+                                        imageVector = Icons.Filled.Edit,
+                                        contentDescription = null,
+                                    )
+                                },
+                                text = { Text(stringResource(R.string.action_edit_post)) },
+                                onClick = {
+                                    isMenuExpanded = false
+                                    onEditClick()
+                                },
+                            )
+                            DropdownMenuItem(
+                                leadingIcon = {
+                                    Icon(
+                                        imageVector = Icons.Filled.Delete,
+                                        contentDescription = null,
+                                    )
+                                },
+                                text = { Text(stringResource(R.string.action_delete_post)) },
+                                onClick = {
+                                    isMenuExpanded = false
+                                    onDeleteClick()
+                                },
+                            )
+                        }
+                    }
+                }
+            } else {
+                null
+            },
     ) {
         Text(
             text = item.title,
@@ -454,6 +746,44 @@ private fun AnnouncementFeedCard(item: RoomFeedItemUiState.Announcement) {
             text = item.message,
             style = MaterialTheme.typography.bodyMedium,
         )
+        if (item.attachments.isNotEmpty()) {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                item.attachments.forEach { attachment ->
+                    Surface(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = MaterialTheme.shapes.large,
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.38f),
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            AttachmentPreview(
+                                modifier = Modifier.size(56.dp),
+                                model = attachment.downloadUrl,
+                                mimeType = attachment.mimeType,
+                                fileName = attachment.name,
+                            )
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = attachment.name,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                                Text(
+                                    text = attachmentTypeLabel(attachment.name, attachment.mimeType),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1,
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
         Text(
             text = stringResource(R.string.room_detail_post_author, item.authorName),
             style = MaterialTheme.typography.bodySmall,
@@ -558,6 +888,7 @@ private fun FeedCardShell(
     label: String,
     createdAt: String,
     accentBrush: Brush,
+    actions: (@Composable () -> Unit)? = null,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     Card(
@@ -579,12 +910,18 @@ private fun FeedCardShell(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 FeedLabelChip(icon = icon, label = label)
-                Text(
-                    text = createdAt,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                )
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = createdAt,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                    )
+                    actions?.invoke()
+                }
             }
             content()
         }
@@ -652,55 +989,55 @@ private fun FeedMetaCard(
 }
 
 @Composable
-private fun CreateAnnouncementDialog(
-    uiState: RoomDetailUiState,
-    onTitleChange: (String) -> Unit,
-    onMessageChange: (String) -> Unit,
+private fun DeleteAnnouncementDialog(
+    pendingDeletion: PendingAnnouncementDeletion,
+    isDeleting: Boolean,
     onDismiss: () -> Unit,
     onConfirm: () -> Unit,
 ) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.create_post_dialog_title)) },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    Dialog(onDismissRequest = onDismiss) {
+        Surface(
+            shape = MaterialTheme.shapes.extraLarge,
+            color = MaterialTheme.colorScheme.surface,
+        ) {
+            Column(
+                modifier = Modifier.padding(24.dp),
+                verticalArrangement = Arrangement.spacedBy(18.dp),
+            ) {
                 Text(
-                    text = stringResource(R.string.create_post_dialog_subtitle),
+                    text = stringResource(R.string.delete_post_dialog_title),
+                    style = MaterialTheme.typography.headlineSmall,
+                )
+                Text(
+                    text =
+                        stringResource(
+                            R.string.delete_post_dialog_message,
+                            pendingDeletion.announcementTitle,
+                        ),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                OutlinedTextField(
-                    value = uiState.announcementTitleInput,
-                    onValueChange = onTitleChange,
+                Row(
                     modifier = Modifier.fillMaxWidth(),
-                    label = { Text(stringResource(R.string.label_post_title)) },
-                    isError = uiState.announcementTitleErrorRes != null,
-                    singleLine = true,
-                )
-                OutlinedTextField(
-                    value = uiState.announcementMessageInput,
-                    onValueChange = onMessageChange,
-                    modifier = Modifier.fillMaxWidth(),
-                    label = { Text(stringResource(R.string.label_post_message)) },
-                    isError = uiState.announcementMessageErrorRes != null,
-                    minLines = 4,
-                )
+                    horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.End),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    TextButton(
+                        onClick = onDismiss,
+                        enabled = !isDeleting,
+                    ) {
+                        Text(stringResource(R.string.action_cancel))
+                    }
+                    Button(
+                        onClick = onConfirm,
+                        enabled = !isDeleting,
+                    ) {
+                        Text(stringResource(R.string.action_delete_post))
+                    }
+                }
             }
-        },
-        confirmButton = {
-            Button(
-                onClick = onConfirm,
-                enabled = !uiState.isCreatingAnnouncement,
-            ) {
-                Text(stringResource(R.string.action_publish_post))
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text(stringResource(R.string.action_cancel))
-            }
-        },
-    )
+        }
+    }
 }
 
 @Composable
@@ -877,6 +1214,8 @@ private fun RoomDetailScreenPreview() {
                                 title = "Homework",
                                 message = "Review unit 3 and prepare five new travel expressions.",
                                 authorName = "Prof. Benza",
+                                attachments = emptyList(),
+                                canManage = true,
                             ),
                             RoomFeedItemUiState.Quiz(
                                 id = "quiz-1",
@@ -889,20 +1228,21 @@ private fun RoomDetailScreenPreview() {
                                 questionCount = 10,
                             ),
                         ),
+                    isLoadingRoom = false,
                     isLoadingFeed = false,
                 ),
             onBackClick = {},
+            onCreatePostClick = {},
+            onEditPostClick = {},
             onOpenQuizClick = {},
             onOpenQuizzesClick = {},
-            onShowCreateAnnouncementDialog = {},
-            onDismissCreateAnnouncementDialog = {},
-            onAnnouncementTitleChange = {},
-            onAnnouncementMessageChange = {},
-            onCreateAnnouncementClick = {},
             onShowInviteDialog = {},
             onDismissInviteDialog = {},
             onInviteSearchQueryChange = {},
             onSendInviteClick = {},
+            onRequestAnnouncementDeletionClick = {},
+            onDismissAnnouncementDeletion = {},
+            onDeleteAnnouncementClick = {},
             onInfoMessageShown = {},
         )
     }

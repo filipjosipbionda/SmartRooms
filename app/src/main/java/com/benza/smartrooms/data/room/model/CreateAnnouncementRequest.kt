@@ -9,4 +9,5 @@ internal data class CreateAnnouncementRequest(
     val authorName: String,
     val title: String,
     val message: String,
+    val attachments: List<CreateAnnouncementAttachment> = emptyList(),
 )

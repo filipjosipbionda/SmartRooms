@@ -7,12 +7,15 @@ import com.benza.smartrooms.data.room.model.CreateRoomRequest
 import com.benza.smartrooms.data.room.model.GenerateQuizRequest
 import com.benza.smartrooms.data.room.model.Room
 import com.benza.smartrooms.data.room.model.RoomAnnouncement
+import com.benza.smartrooms.data.room.model.RoomAnnouncementAttachment
 import com.benza.smartrooms.data.room.model.RoomInvitation
 import com.benza.smartrooms.data.room.model.RoomOperationResult
 import com.benza.smartrooms.data.room.model.RoomQuiz
 import com.benza.smartrooms.data.room.model.RoomQuizQuestion
 import com.benza.smartrooms.data.room.model.RoomQuizSummary
+import com.benza.smartrooms.data.room.model.UpdateAnnouncementRequest
 import com.benza.smartrooms.data.room.remote.FirebaseFunctionsRoomDataSource
+import com.benza.smartrooms.data.room.remote.FirebaseStorageRoomAttachmentDataSource
 import com.benza.smartrooms.data.room.remote.FirestoreRoomDataSource
 import com.google.firebase.FirebaseNetworkException
 import com.google.firebase.firestore.FirebaseFirestoreException
@@ -23,6 +26,7 @@ import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
+import java.util.UUID
 
 /**
  * Firestore-backed implementation of [RoomRepository].
@@ -30,6 +34,7 @@ import kotlinx.coroutines.withContext
 internal class FirestoreRoomRepository(
     private val roomDataSource: FirestoreRoomDataSource,
     private val functionsRoomDataSource: FirebaseFunctionsRoomDataSource,
+    private val storageAttachmentDataSource: FirebaseStorageRoomAttachmentDataSource,
 ) : RoomRepository {
     /**
      * Streams rooms from Firestore and maps failures to UI-facing messages.
@@ -119,6 +124,25 @@ internal class FirestoreRoomRepository(
             .catch { emit(RoomOperationResult.Error(it.toRoomErrorRes(), it.toDebugMessage())) }
             .flowOn(Dispatchers.IO)
 
+    override suspend fun getAnnouncement(
+        roomId: String,
+        announcementId: String,
+    ): RoomOperationResult<RoomAnnouncement> =
+        withContext(Dispatchers.IO) {
+            runCatching {
+                roomDataSource.getAnnouncement(roomId, announcementId)
+            }.fold(
+                onSuccess = { announcement ->
+                    if (announcement != null) {
+                        RoomOperationResult.Success(announcement)
+                    } else {
+                        RoomOperationResult.Error(R.string.error_announcement_not_found)
+                    }
+                },
+                onFailure = { RoomOperationResult.Error(it.toRoomErrorRes(), it.toDebugMessage()) },
+            )
+        }
+
     /**
      * Creates a room document in Firestore.
      */
@@ -138,7 +162,93 @@ internal class FirestoreRoomRepository(
     override suspend fun createAnnouncement(request: CreateAnnouncementRequest): RoomOperationResult<Unit> =
         withContext(Dispatchers.IO) {
             runCatching {
-                roomDataSource.createAnnouncement(request)
+                val announcementId = UUID.randomUUID().toString()
+                val uploadedAttachments = mutableListOf<RoomAnnouncementAttachment>()
+                try {
+                    request.attachments.forEach { attachment ->
+                        val uploadedAttachment =
+                            try {
+                                storageAttachmentDataSource.uploadAnnouncementAttachment(
+                                    roomId = request.roomId,
+                                    announcementId = announcementId,
+                                    attachment = attachment,
+                                )
+                            } catch (exception: Exception) {
+                                throw IllegalStateException(
+                                    "Couldn't upload \"${attachment.name}\". Try again or choose a different file.",
+                                    exception,
+                                )
+                            }
+                        uploadedAttachments += uploadedAttachment
+                    }
+
+                    roomDataSource.createAnnouncement(
+                        request = request,
+                        announcementId = announcementId,
+                        attachments = uploadedAttachments,
+                    )
+                } catch (exception: Exception) {
+                    storageAttachmentDataSource.deleteAttachments(
+                        uploadedAttachments.map(RoomAnnouncementAttachment::storagePath),
+                    )
+                    throw exception
+                }
+            }.fold(
+                onSuccess = { RoomOperationResult.Success(Unit) },
+                onFailure = { RoomOperationResult.Error(it.toRoomErrorRes(), it.toDebugMessage()) },
+            )
+        }
+
+    override suspend fun updateAnnouncement(request: UpdateAnnouncementRequest): RoomOperationResult<Unit> =
+        withContext(Dispatchers.IO) {
+            runCatching {
+                val uploadedAttachments = mutableListOf<RoomAnnouncementAttachment>()
+                try {
+                    request.newAttachments.forEach { attachment ->
+                        val uploadedAttachment =
+                            try {
+                                storageAttachmentDataSource.uploadAnnouncementAttachment(
+                                    roomId = request.roomId,
+                                    announcementId = request.announcementId,
+                                    attachment = attachment,
+                                )
+                            } catch (exception: Exception) {
+                                throw IllegalStateException(
+                                    "Couldn't upload \"${attachment.name}\". Try again or choose a different file.",
+                                    exception,
+                                )
+                            }
+                        uploadedAttachments += uploadedAttachment
+                    }
+
+                    roomDataSource.updateAnnouncement(
+                        request = request,
+                        attachments = request.existingAttachments + uploadedAttachments,
+                    )
+                    storageAttachmentDataSource.deleteAttachments(
+                        request.removedAttachments.map(RoomAnnouncementAttachment::storagePath),
+                    )
+                } catch (exception: Exception) {
+                    storageAttachmentDataSource.deleteAttachments(
+                        uploadedAttachments.map(RoomAnnouncementAttachment::storagePath),
+                    )
+                    throw exception
+                }
+            }.fold(
+                onSuccess = { RoomOperationResult.Success(Unit) },
+                onFailure = { RoomOperationResult.Error(it.toRoomErrorRes(), it.toDebugMessage()) },
+            )
+        }
+
+    override suspend fun deleteAnnouncement(
+        roomId: String,
+        announcementId: String,
+        attachments: Collection<RoomAnnouncementAttachment>,
+    ): RoomOperationResult<Unit> =
+        withContext(Dispatchers.IO) {
+            runCatching {
+                roomDataSource.deleteAnnouncement(roomId, announcementId)
+                storageAttachmentDataSource.deleteAttachments(attachments.map(RoomAnnouncementAttachment::storagePath))
             }.fold(
                 onSuccess = { RoomOperationResult.Success(Unit) },
                 onFailure = { RoomOperationResult.Error(it.toRoomErrorRes(), it.toDebugMessage()) },

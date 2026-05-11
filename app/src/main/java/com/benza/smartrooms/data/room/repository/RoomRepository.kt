@@ -6,11 +6,13 @@ import com.benza.smartrooms.data.room.model.CreateRoomRequest
 import com.benza.smartrooms.data.room.model.GenerateQuizRequest
 import com.benza.smartrooms.data.room.model.Room
 import com.benza.smartrooms.data.room.model.RoomAnnouncement
+import com.benza.smartrooms.data.room.model.RoomAnnouncementAttachment
 import com.benza.smartrooms.data.room.model.RoomInvitation
 import com.benza.smartrooms.data.room.model.RoomOperationResult
 import com.benza.smartrooms.data.room.model.RoomQuiz
 import com.benza.smartrooms.data.room.model.RoomQuizQuestion
 import com.benza.smartrooms.data.room.model.RoomQuizSummary
+import com.benza.smartrooms.data.room.model.UpdateAnnouncementRequest
 import kotlinx.coroutines.flow.Flow
 
 /**
@@ -66,6 +68,14 @@ internal interface RoomRepository {
     fun observeAnnouncements(roomId: String): Flow<RoomOperationResult<List<RoomAnnouncement>>>
 
     /**
+     * Loads one announcement from the selected room.
+     */
+    suspend fun getAnnouncement(
+        roomId: String,
+        announcementId: String,
+    ): RoomOperationResult<RoomAnnouncement>
+
+    /**
      * Creates a new room document for the signed-in user.
      */
     suspend fun createRoom(request: CreateRoomRequest): RoomOperationResult<Unit>
@@ -74,6 +84,20 @@ internal interface RoomRepository {
      * Creates a new announcement document inside the supplied room.
      */
     suspend fun createAnnouncement(request: CreateAnnouncementRequest): RoomOperationResult<Unit>
+
+    /**
+     * Updates one announcement document inside the supplied room.
+     */
+    suspend fun updateAnnouncement(request: UpdateAnnouncementRequest): RoomOperationResult<Unit>
+
+    /**
+     * Deletes one announcement document from the supplied room.
+     */
+    suspend fun deleteAnnouncement(
+        roomId: String,
+        announcementId: String,
+        attachments: Collection<RoomAnnouncementAttachment>,
+    ): RoomOperationResult<Unit>
 
     /**
      * Creates a pending room invitation for the selected user.

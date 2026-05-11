@@ -9,6 +9,7 @@ import com.benza.smartrooms.feature.auth.forgotpassword.ForgotPasswordRouteScree
 import com.benza.smartrooms.feature.auth.login.LoginRouteScreen
 import com.benza.smartrooms.feature.auth.register.RegisterRouteScreen
 import com.benza.smartrooms.feature.auth.roleselection.RoleSelectionRouteScreen
+import com.benza.smartrooms.feature.createpost.CreatePostRouteScreen
 import com.benza.smartrooms.feature.createroom.CreateRoomRouteScreen
 import com.benza.smartrooms.feature.home.HomeRouteScreen
 import com.benza.smartrooms.feature.profile.ProfileRouteScreen
@@ -80,6 +81,7 @@ internal fun SmartRoomsNavHost(
                             roomId = room.id,
                             roomName = room.name,
                             roomTopic = room.topic,
+                            roomCefrLevel = room.cefrLevel,
                         ),
                     )
                 },
@@ -112,7 +114,25 @@ internal fun SmartRoomsNavHost(
                 roomId = route.roomId,
                 roomName = route.roomName,
                 roomTopic = route.roomTopic,
+                roomCefrLevel = route.roomCefrLevel,
                 onBackClick = { navController.popBackStack() },
+                onCreatePostClick = {
+                    navController.navigate(
+                        CreatePostRoute(
+                            roomId = route.roomId,
+                            roomName = route.roomName,
+                        ),
+                    )
+                },
+                onEditPostClick = { announcementId ->
+                    navController.navigate(
+                        CreatePostRoute(
+                            roomId = route.roomId,
+                            roomName = route.roomName,
+                            announcementId = announcementId,
+                        ),
+                    )
+                },
                 onOpenQuizClick = { quizId ->
                     navController.navigate(
                         RoomQuizPlayerRoute(
@@ -131,6 +151,17 @@ internal fun SmartRoomsNavHost(
                         ),
                     )
                 },
+            )
+        }
+
+        composable<CreatePostRoute> { backStackEntry ->
+            val route = backStackEntry.toRoute<CreatePostRoute>()
+            CreatePostRouteScreen(
+                roomId = route.roomId,
+                roomName = route.roomName,
+                announcementId = route.announcementId,
+                onBackClick = { navController.popBackStack() },
+                onPostCompleted = { navController.popBackStack() },
             )
         }
 

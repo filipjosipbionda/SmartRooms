@@ -57,6 +57,17 @@ internal data class RoomDetailRoute(
     val roomId: String,
     val roomName: String,
     val roomTopic: String,
+    val roomCefrLevel: String = "",
+) : SmartRoomsDestination
+
+/**
+ * Type-safe destination for creating a new room post.
+ */
+@Serializable
+internal data class CreatePostRoute(
+    val roomId: String,
+    val roomName: String,
+    val announcementId: String? = null,
 ) : SmartRoomsDestination
 
 /**

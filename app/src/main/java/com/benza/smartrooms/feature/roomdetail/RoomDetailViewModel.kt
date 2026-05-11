@@ -5,10 +5,10 @@ import androidx.lifecycle.viewModelScope
 import com.benza.smartrooms.R
 import com.benza.smartrooms.data.auth.model.AuthUser
 import com.benza.smartrooms.data.auth.repository.AuthRepository
-import com.benza.smartrooms.data.room.model.CreateAnnouncementRequest
 import com.benza.smartrooms.data.room.model.CreateRoomInvitationRequest
 import com.benza.smartrooms.data.room.model.QuestionType
 import com.benza.smartrooms.data.room.model.RoomAnnouncement
+import com.benza.smartrooms.data.room.model.RoomAnnouncementAttachment
 import com.benza.smartrooms.data.room.model.RoomInvitationAccess
 import com.benza.smartrooms.data.room.model.RoomOperationResult
 import com.benza.smartrooms.data.room.model.RoomQuizStatus
@@ -22,7 +22,6 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
@@ -36,6 +35,8 @@ internal sealed interface RoomFeedItemUiState {
         val title: String,
         val message: String,
         val authorName: String,
+        val attachments: List<RoomAnnouncementAttachment>,
+        val canManage: Boolean,
     ) : RoomFeedItemUiState
 
     data class Quiz(
@@ -60,18 +61,15 @@ internal data class RoomDetailUiState(
     val collaboratorIds: List<String> = emptyList(),
     val isCurrentUserOwner: Boolean = false,
     val feedItems: List<RoomFeedItemUiState> = emptyList(),
+    val isLoadingRoom: Boolean = true,
     val isLoadingFeed: Boolean = true,
-    val isCreateAnnouncementDialogOpen: Boolean = false,
-    val isCreatingAnnouncement: Boolean = false,
     val isInviteDialogOpen: Boolean = false,
     val inviteSearchQuery: String = "",
     val inviteSearchResults: List<InviteUserUiState> = emptyList(),
     val isSearchingInviteUsers: Boolean = false,
     val isSendingInvite: Boolean = false,
-    val announcementTitleInput: String = "",
-    val announcementMessageInput: String = "",
-    val announcementTitleErrorRes: Int? = null,
-    val announcementMessageErrorRes: Int? = null,
+    val pendingAnnouncementDeletion: PendingAnnouncementDeletion? = null,
+    val isDeletingAnnouncement: Boolean = false,
     val errorMessageRes: Int? = null,
     val infoMessageRes: Int? = null,
 )
@@ -84,16 +82,29 @@ internal data class InviteUserUiState(
     val access: RoomInvitationAccess,
 )
 
+internal data class PendingAnnouncementDeletion(
+    val announcementId: String,
+    val announcementTitle: String,
+    val attachments: List<RoomAnnouncementAttachment>,
+)
+
 internal class RoomDetailViewModel(
     roomId: String,
     roomName: String,
     roomTopic: String,
+    roomCefrLevel: String,
     private val roomRepository: RoomRepository,
     private val authRepository: AuthRepository,
     private val userProfileRepository: UserProfileRepository,
 ) : ViewModel() {
     private val currentUser = authRepository.getCurrentUser()
     private var inviteSearchJob: Job? = null
+    private var latestQuizzes: List<RoomQuizSummary> = emptyList()
+    private var latestAnnouncements: List<RoomAnnouncement> = emptyList()
+    private var areQuizzesLoaded = false
+    private var areAnnouncementsLoaded = false
+    private var quizzesErrorMessageRes: Int? = null
+    private var announcementsErrorMessageRes: Int? = null
 
     private val _uiState =
         MutableStateFlow(
@@ -101,6 +112,8 @@ internal class RoomDetailViewModel(
                 roomId = roomId,
                 roomName = roomName,
                 roomTopic = roomTopic,
+                cefrLevel = roomCefrLevel,
+                isLoadingRoom = roomCefrLevel.isBlank(),
             ),
         )
     val uiState: StateFlow<RoomDetailUiState> = _uiState.asStateFlow()
@@ -114,14 +127,73 @@ internal class RoomDetailViewModel(
         _uiState.update { it.copy(infoMessageRes = null) }
     }
 
-    internal fun showCreateAnnouncementDialog() {
+    internal fun requestAnnouncementDeletion(item: RoomFeedItemUiState.Announcement) {
+        if (!item.canManage) return
+
         _uiState.update {
             it.copy(
-                isCreateAnnouncementDialogOpen = true,
-                announcementTitleErrorRes = null,
-                announcementMessageErrorRes = null,
+                pendingAnnouncementDeletion =
+                    PendingAnnouncementDeletion(
+                        announcementId = item.id,
+                        announcementTitle = item.title,
+                        attachments = item.attachments,
+                    ),
                 errorMessageRes = null,
+                infoMessageRes = null,
             )
+        }
+    }
+
+    internal fun dismissAnnouncementDeletion() {
+        if (_uiState.value.isDeletingAnnouncement) return
+        _uiState.update { it.copy(pendingAnnouncementDeletion = null) }
+    }
+
+    internal fun deleteAnnouncement() {
+        currentUser ?: run {
+            _uiState.update { it.copy(errorMessageRes = R.string.error_room_auth_required) }
+            return
+        }
+        val pendingDeletion = _uiState.value.pendingAnnouncementDeletion ?: return
+        if (_uiState.value.isDeletingAnnouncement) return
+
+        _uiState.update {
+            it.copy(
+                isDeletingAnnouncement = true,
+                errorMessageRes = null,
+                infoMessageRes = null,
+            )
+        }
+
+        viewModelScope.launch {
+            when (
+                val result =
+                    roomRepository.deleteAnnouncement(
+                        roomId = _uiState.value.roomId,
+                        announcementId = pendingDeletion.announcementId,
+                        attachments = pendingDeletion.attachments,
+                    )
+            ) {
+                is RoomOperationResult.Success -> {
+                    _uiState.update {
+                        it.copy(
+                            pendingAnnouncementDeletion = null,
+                            isDeletingAnnouncement = false,
+                            infoMessageRes = R.string.room_detail_post_deleted,
+                        )
+                    }
+                }
+
+                is RoomOperationResult.Error -> {
+                    _uiState.update {
+                        it.copy(
+                            pendingAnnouncementDeletion = null,
+                            isDeletingAnnouncement = false,
+                            errorMessageRes = result.messageRes,
+                        )
+                    }
+                }
+            }
         }
     }
 
@@ -267,160 +339,59 @@ internal class RoomDetailViewModel(
         }
     }
 
-    internal fun dismissCreateAnnouncementDialog() {
-        if (_uiState.value.isCreatingAnnouncement) return
-
-        _uiState.update {
-            it.copy(
-                isCreateAnnouncementDialogOpen = false,
-                announcementTitleInput = "",
-                announcementMessageInput = "",
-                announcementTitleErrorRes = null,
-                announcementMessageErrorRes = null,
-            )
-        }
-    }
-
-    internal fun onAnnouncementTitleChanged(value: String) {
-        _uiState.update {
-            it.copy(
-                announcementTitleInput = value,
-                announcementTitleErrorRes = null,
-                errorMessageRes = null,
-            )
-        }
-    }
-
-    internal fun onAnnouncementMessageChanged(value: String) {
-        _uiState.update {
-            it.copy(
-                announcementMessageInput = value,
-                announcementMessageErrorRes = null,
-                errorMessageRes = null,
-            )
-        }
-    }
-
-    internal fun createAnnouncement() {
-        val user =
-            authRepository.getCurrentUser() ?: run {
-                _uiState.update { it.copy(errorMessageRes = R.string.error_room_auth_required) }
-                return
-            }
-        if (_uiState.value.isCreatingAnnouncement) return
-
-        val title = _uiState.value.announcementTitleInput.trim()
-        val message = _uiState.value.announcementMessageInput.trim()
-        val titleError = if (title.isBlank()) R.string.error_announcement_title_required else null
-        val messageError = if (message.isBlank()) R.string.error_announcement_message_required else null
-
-        _uiState.update {
-            it.copy(
-                announcementTitleInput = title,
-                announcementMessageInput = message,
-                announcementTitleErrorRes = titleError,
-                announcementMessageErrorRes = messageError,
-                errorMessageRes =
-                    if (titleError == null && messageError == null) {
-                        null
-                    } else {
-                        R.string.error_announcement_fix_fields
-                    },
-            )
-        }
-
-        if (titleError != null || messageError != null) return
-
-        _uiState.update {
-            it.copy(
-                isCreatingAnnouncement = true,
-                errorMessageRes = null,
-                infoMessageRes = null,
-            )
-        }
-
-        viewModelScope.launch {
-            when (
-                val result =
-                    roomRepository.createAnnouncement(
-                        CreateAnnouncementRequest(
-                            roomId = _uiState.value.roomId,
-                            authorId = user.uid,
-                            authorName = user.displayNameOrEmailName(),
-                            title = title,
-                            message = message,
-                        ),
-                    )
-            ) {
-                is RoomOperationResult.Success -> {
-                    _uiState.update {
-                        it.copy(
-                            isCreatingAnnouncement = false,
-                            isCreateAnnouncementDialogOpen = false,
-                            announcementTitleInput = "",
-                            announcementMessageInput = "",
-                            announcementTitleErrorRes = null,
-                            announcementMessageErrorRes = null,
-                            infoMessageRes = R.string.room_detail_post_created,
-                        )
-                    }
-                }
-
-                is RoomOperationResult.Error -> {
-                    _uiState.update {
-                        it.copy(
-                            isCreatingAnnouncement = false,
-                            errorMessageRes = result.messageRes,
-                        )
-                    }
-                }
-            }
-        }
-    }
-
     private fun observeFeed() {
+        val currentUserId = currentUser?.uid.orEmpty()
         viewModelScope.launch {
-            combine(
-                roomRepository.observeQuizzes(_uiState.value.roomId),
-                roomRepository.observeAnnouncements(_uiState.value.roomId),
-            ) { quizzesResult, announcementsResult ->
-                quizzesResult to announcementsResult
-            }.collect { (quizzesResult, announcementsResult) ->
-                when {
-                    quizzesResult is RoomOperationResult.Error -> {
-                        _uiState.update {
-                            it.copy(
-                                isLoadingFeed = false,
-                                errorMessageRes = quizzesResult.messageRes,
-                            )
-                        }
+            roomRepository.observeQuizzes(_uiState.value.roomId).collect { result ->
+                when (result) {
+                    is RoomOperationResult.Success -> {
+                        latestQuizzes = result.data
+                        areQuizzesLoaded = true
+                        quizzesErrorMessageRes = null
+                        publishFeedState(currentUserId)
                     }
 
-                    announcementsResult is RoomOperationResult.Error -> {
-                        _uiState.update {
-                            it.copy(
-                                isLoadingFeed = false,
-                                errorMessageRes = announcementsResult.messageRes,
-                            )
-                        }
-                    }
-
-                    quizzesResult is RoomOperationResult.Success &&
-                        announcementsResult is RoomOperationResult.Success -> {
-                        _uiState.update {
-                            it.copy(
-                                feedItems =
-                                    buildFeedItems(
-                                        quizzes = quizzesResult.data,
-                                        announcements = announcementsResult.data,
-                                    ),
-                                isLoadingFeed = false,
-                                errorMessageRes = null,
-                            )
-                        }
+                    is RoomOperationResult.Error -> {
+                        areQuizzesLoaded = true
+                        quizzesErrorMessageRes = result.messageRes
+                        publishFeedState(currentUserId)
                     }
                 }
             }
+        }
+
+        viewModelScope.launch {
+            roomRepository.observeAnnouncements(_uiState.value.roomId).collect { result ->
+                when (result) {
+                    is RoomOperationResult.Success -> {
+                        latestAnnouncements = result.data
+                        areAnnouncementsLoaded = true
+                        announcementsErrorMessageRes = null
+                        publishFeedState(currentUserId)
+                    }
+
+                    is RoomOperationResult.Error -> {
+                        areAnnouncementsLoaded = true
+                        announcementsErrorMessageRes = result.messageRes
+                        publishFeedState(currentUserId)
+                    }
+                }
+            }
+        }
+    }
+
+    private fun publishFeedState(currentUserId: String) {
+        _uiState.update {
+            it.copy(
+                feedItems =
+                    buildFeedItems(
+                        quizzes = latestQuizzes,
+                        announcements = latestAnnouncements,
+                        currentUserId = currentUserId,
+                    ),
+                isLoadingFeed = !areQuizzesLoaded || !areAnnouncementsLoaded,
+                errorMessageRes = quizzesErrorMessageRes ?: announcementsErrorMessageRes,
+            )
         }
     }
 
@@ -438,13 +409,19 @@ internal class RoomDetailViewModel(
                                 memberIds = result.data.memberIds,
                                 collaboratorIds = result.data.collaboratorIds,
                                 isCurrentUserOwner = result.data.ownerId == currentUser?.uid,
+                                isLoadingRoom = false,
                                 errorMessageRes = null,
                             )
                         }
                     }
 
                     is RoomOperationResult.Error -> {
-                        _uiState.update { it.copy(errorMessageRes = result.messageRes) }
+                        _uiState.update {
+                            it.copy(
+                                isLoadingRoom = false,
+                                errorMessageRes = result.messageRes,
+                            )
+                        }
                     }
                 }
             }
@@ -455,6 +432,7 @@ internal class RoomDetailViewModel(
 private fun buildFeedItems(
     quizzes: List<RoomQuizSummary>,
     announcements: List<RoomAnnouncement>,
+    currentUserId: String,
 ): List<RoomFeedItemUiState> =
     buildList {
         announcements.forEach { announcement ->
@@ -465,6 +443,8 @@ private fun buildFeedItems(
                     title = announcement.title,
                     message = announcement.message,
                     authorName = announcement.authorName,
+                    attachments = announcement.attachments,
+                    canManage = announcement.authorId == currentUserId,
                 ),
             )
         }

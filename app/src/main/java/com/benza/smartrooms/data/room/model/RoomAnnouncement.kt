@@ -7,6 +7,8 @@ internal data class RoomAnnouncement(
     val id: String,
     val title: String,
     val message: String,
+    val authorId: String,
     val authorName: String,
     val createdAtEpochMillis: Long,
+    val attachments: List<RoomAnnouncementAttachment> = emptyList(),
 )

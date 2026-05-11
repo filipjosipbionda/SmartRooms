@@ -6,12 +6,14 @@ import com.benza.smartrooms.data.room.model.QuestionType
 import com.benza.smartrooms.data.room.model.QuizKind
 import com.benza.smartrooms.data.room.model.Room
 import com.benza.smartrooms.data.room.model.RoomAnnouncement
+import com.benza.smartrooms.data.room.model.RoomAnnouncementAttachment
 import com.benza.smartrooms.data.room.model.RoomInvitation
 import com.benza.smartrooms.data.room.model.RoomInvitationAccess
 import com.benza.smartrooms.data.room.model.RoomQuiz
 import com.benza.smartrooms.data.room.model.RoomQuizQuestion
 import com.benza.smartrooms.data.room.model.RoomQuizStatus
 import com.benza.smartrooms.data.room.model.RoomQuizSummary
+import com.benza.smartrooms.data.room.model.UpdateAnnouncementRequest
 import com.google.android.gms.tasks.Task
 import com.google.firebase.firestore.DocumentSnapshot
 import com.google.firebase.firestore.FirebaseFirestore
@@ -261,6 +263,19 @@ internal class FirestoreRoomDataSource(
             awaitClose { registration.remove() }
         }
 
+    internal suspend fun getAnnouncement(
+        roomId: String,
+        announcementId: String,
+    ): RoomAnnouncement? =
+        firestore
+            .collection(ROOMS_COLLECTION)
+            .document(roomId)
+            .collection(ANNOUNCEMENTS_COLLECTION)
+            .document(announcementId)
+            .get()
+            .await()
+            .toAnnouncement()
+
     /**
      * Creates a new room document in Firestore.
      */
@@ -289,13 +304,17 @@ internal class FirestoreRoomDataSource(
     /**
      * Creates a new room announcement document in Firestore.
      */
-    internal suspend fun createAnnouncement(request: CreateAnnouncementRequest) {
+    internal suspend fun createAnnouncement(
+        request: CreateAnnouncementRequest,
+        announcementId: String,
+        attachments: List<RoomAnnouncementAttachment>,
+    ) {
         val announcementDocument =
             firestore
                 .collection(ROOMS_COLLECTION)
                 .document(request.roomId)
                 .collection(ANNOUNCEMENTS_COLLECTION)
-                .document()
+                .document(announcementId)
 
         announcementDocument
             .set(
@@ -306,8 +325,40 @@ internal class FirestoreRoomDataSource(
                     ANNOUNCEMENT_AUTHOR_ID_FIELD to request.authorId,
                     ANNOUNCEMENT_AUTHOR_NAME_FIELD to request.authorName,
                     ANNOUNCEMENT_CREATED_AT_EPOCH_FIELD to System.currentTimeMillis(),
+                    ANNOUNCEMENT_ATTACHMENTS_FIELD to attachments.map(RoomAnnouncementAttachment::toFirestoreMap),
                 ),
             ).await()
+    }
+
+    internal suspend fun updateAnnouncement(
+        request: UpdateAnnouncementRequest,
+        attachments: List<RoomAnnouncementAttachment>,
+    ) {
+        firestore
+            .collection(ROOMS_COLLECTION)
+            .document(request.roomId)
+            .collection(ANNOUNCEMENTS_COLLECTION)
+            .document(request.announcementId)
+            .update(
+                mapOf(
+                    ANNOUNCEMENT_TITLE_FIELD to request.title,
+                    ANNOUNCEMENT_MESSAGE_FIELD to request.message,
+                    ANNOUNCEMENT_ATTACHMENTS_FIELD to attachments.map(RoomAnnouncementAttachment::toFirestoreMap),
+                ),
+            ).await()
+    }
+
+    internal suspend fun deleteAnnouncement(
+        roomId: String,
+        announcementId: String,
+    ) {
+        firestore
+            .collection(ROOMS_COLLECTION)
+            .document(roomId)
+            .collection(ANNOUNCEMENTS_COLLECTION)
+            .document(announcementId)
+            .delete()
+            .await()
     }
 
     /**
@@ -501,11 +552,17 @@ private fun DocumentSnapshot.toQuiz(): RoomQuiz? {
 private fun DocumentSnapshot.toAnnouncement(): RoomAnnouncement? {
     val title = getString(ANNOUNCEMENT_TITLE_FIELD) ?: return null
     val message = getString(ANNOUNCEMENT_MESSAGE_FIELD) ?: return null
+    val attachments =
+        (get(ANNOUNCEMENT_ATTACHMENTS_FIELD) as? List<*>)
+            .orEmpty()
+            .filterIsInstance<Map<*, *>>()
+            .mapNotNull(Map<*, *>::toAnnouncementAttachment)
 
     return RoomAnnouncement(
         id = id,
         title = title,
         message = message,
+        authorId = getString(ANNOUNCEMENT_AUTHOR_ID_FIELD).orEmpty(),
         authorName =
             getString(ANNOUNCEMENT_AUTHOR_NAME_FIELD).orEmpty().ifBlank {
                 DEFAULT_ANNOUNCEMENT_AUTHOR
@@ -515,8 +572,37 @@ private fun DocumentSnapshot.toAnnouncement(): RoomAnnouncement? {
                 ?: getLong(ANNOUNCEMENT_CREATED_AT_EPOCH_FIELD)
                 ?: 0L
         ),
+        attachments = attachments,
     )
 }
+
+private fun Map<*, *>.toAnnouncementAttachment(): RoomAnnouncementAttachment? {
+    val id = getStringValue(ID_FIELD) ?: return null
+    val name = getStringValue(ATTACHMENT_NAME_FIELD) ?: return null
+    val mimeType = getStringValue(ATTACHMENT_MIME_TYPE_FIELD) ?: return null
+    val sizeBytes = (this[ATTACHMENT_SIZE_BYTES_FIELD] as? Number)?.toLong() ?: return null
+    val storagePath = getStringValue(ATTACHMENT_STORAGE_PATH_FIELD) ?: return null
+    val downloadUrl = getStringValue(ATTACHMENT_DOWNLOAD_URL_FIELD) ?: return null
+
+    return RoomAnnouncementAttachment(
+        id = id,
+        name = name,
+        mimeType = mimeType,
+        sizeBytes = sizeBytes,
+        storagePath = storagePath,
+        downloadUrl = downloadUrl,
+    )
+}
+
+private fun RoomAnnouncementAttachment.toFirestoreMap(): Map<String, Any> =
+    mapOf(
+        ID_FIELD to id,
+        ATTACHMENT_NAME_FIELD to name,
+        ATTACHMENT_MIME_TYPE_FIELD to mimeType,
+        ATTACHMENT_SIZE_BYTES_FIELD to sizeBytes,
+        ATTACHMENT_STORAGE_PATH_FIELD to storagePath,
+        ATTACHMENT_DOWNLOAD_URL_FIELD to downloadUrl,
+    )
 
 private fun DocumentSnapshot.toRoomInvitation(): RoomInvitation? {
     val roomId = getString(ROOM_ID_FIELD) ?: return null
@@ -776,4 +862,10 @@ private const val ANNOUNCEMENT_AUTHOR_ID_FIELD = "authorId"
 private const val ANNOUNCEMENT_AUTHOR_NAME_FIELD = "authorName"
 private const val ANNOUNCEMENT_CREATED_AT_FIELD = "createdAt"
 private const val ANNOUNCEMENT_CREATED_AT_EPOCH_FIELD = "createdAtEpochMillis"
+private const val ANNOUNCEMENT_ATTACHMENTS_FIELD = "attachments"
+private const val ATTACHMENT_NAME_FIELD = "name"
+private const val ATTACHMENT_MIME_TYPE_FIELD = "mimeType"
+private const val ATTACHMENT_SIZE_BYTES_FIELD = "sizeBytes"
+private const val ATTACHMENT_STORAGE_PATH_FIELD = "storagePath"
+private const val ATTACHMENT_DOWNLOAD_URL_FIELD = "downloadUrl"
 private const val DEFAULT_ANNOUNCEMENT_AUTHOR = "Teacher"
