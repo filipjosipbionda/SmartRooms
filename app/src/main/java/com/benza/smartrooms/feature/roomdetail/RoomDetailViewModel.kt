@@ -94,7 +94,7 @@ internal class RoomDetailViewModel(
     roomTopic: String,
     roomCefrLevel: String,
     private val roomRepository: RoomRepository,
-    private val authRepository: AuthRepository,
+    authRepository: AuthRepository,
     private val userProfileRepository: UserProfileRepository,
 ) : ViewModel() {
     private val currentUser = authRepository.getCurrentUser()

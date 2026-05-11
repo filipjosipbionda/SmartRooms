@@ -69,7 +69,7 @@ internal data class HomeUiState(
  * Provides Firestore-backed room state and exposes logout / room creation behavior.
  */
 internal class HomeViewModel(
-    private val authRepository: AuthRepository,
+    authRepository: AuthRepository,
     private val roomRepository: RoomRepository,
 ) : ViewModel() {
     private val currentUser = authRepository.getCurrentUser()

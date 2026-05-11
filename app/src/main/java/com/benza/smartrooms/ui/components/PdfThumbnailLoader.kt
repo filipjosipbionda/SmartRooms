@@ -3,9 +3,10 @@ package com.benza.smartrooms.ui.components
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.pdf.PdfRenderer
-import android.net.Uri
 import android.os.ParcelFileDescriptor
 import android.util.LruCache
+import androidx.core.graphics.createBitmap
+import androidx.core.net.toUri
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -32,7 +33,7 @@ internal object PdfThumbnailLoader {
                                 (width * page.height / page.width.toFloat())
                                     .toInt()
                                     .coerceAtLeast(PDF_THUMBNAIL_MIN_HEIGHT)
-                            val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+                            val bitmap = createBitmap(width, height)
                             bitmap.eraseColor(android.graphics.Color.WHITE)
                             page.render(
                                 bitmap,
@@ -55,7 +56,7 @@ internal object PdfThumbnailLoader {
     ): ParcelFileDescriptor? =
         when {
             source.startsWith("content://") || source.startsWith("file://") -> {
-                context.contentResolver.openFileDescriptor(Uri.parse(source), "r")
+                context.contentResolver.openFileDescriptor(source.toUri(), "r")
             }
 
             source.startsWith("http://") || source.startsWith("https://") -> {
@@ -64,7 +65,7 @@ internal object PdfThumbnailLoader {
             }
 
             else -> {
-                context.contentResolver.openFileDescriptor(Uri.parse(source), "r")
+                context.contentResolver.openFileDescriptor(source.toUri(), "r")
             }
         }
 

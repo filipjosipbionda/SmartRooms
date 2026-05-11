@@ -64,7 +64,7 @@ internal class CreatePostViewModel(
     roomName: String,
     announcementId: String?,
     private val roomRepository: RoomRepository,
-    private val authRepository: AuthRepository,
+    authRepository: AuthRepository,
 ) : ViewModel() {
     private val currentUser = authRepository.getCurrentUser()
     private var originalRemoteAttachments: List<RoomAnnouncementAttachment> = emptyList()

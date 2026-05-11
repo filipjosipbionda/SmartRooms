@@ -1,6 +1,6 @@
 package com.benza.smartrooms.data.room.remote
 
-import android.net.Uri
+import androidx.core.net.toUri
 import com.benza.smartrooms.data.room.model.CreateAnnouncementAttachment
 import com.benza.smartrooms.data.room.model.RoomAnnouncementAttachment
 import com.google.android.gms.tasks.Task
@@ -29,7 +29,7 @@ internal class FirebaseStorageRoomAttachmentDataSource(
             "rooms/$roomId/announcements/$announcementId/${attachmentId}_$sanitizedFileName"
         val fileReference = firebaseStorage.reference.child(storagePath)
 
-        fileReference.putFile(Uri.parse(attachment.uriString)).await()
+        fileReference.putFile(attachment.uriString.toUri()).await()
         val downloadUrl = fileReference.downloadUrl.await().toString()
 
         return RoomAnnouncementAttachment(
