@@ -2,14 +2,22 @@ package com.benza.smartrooms.feature.roomquizplayer
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.benza.smartrooms.data.auth.repository.AuthRepository
 import com.benza.smartrooms.data.room.model.RoomOperationResult
 import com.benza.smartrooms.data.room.model.RoomQuiz
 import com.benza.smartrooms.data.room.model.RoomQuizQuestion
+import com.benza.smartrooms.data.room.model.RoomQuizQuestionResult
+import com.benza.smartrooms.data.room.model.RoomQuizResult
+import com.benza.smartrooms.data.room.model.RoomQuizScoring
 import com.benza.smartrooms.data.room.repository.RoomRepository
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -32,14 +40,24 @@ internal data class RoomQuizPlayerUiState(
     val fillInAnswers: Map<String, String> = emptyMap(),
     val scrambleAnswerSlots: Map<String, List<String?>> = emptyMap(),
     val correctQuestionIds: Set<String> = emptySet(),
+    val questionResultsById: Map<String, RoomQuizQuestionResult> = emptyMap(),
     val lockedQuestionIds: Set<String> = emptySet(),
+    val timedOutQuestionIds: Set<String> = emptySet(),
     val remainingTimeSeconds: Int? = null,
     val isLoadingQuiz: Boolean = true,
+    val isSavingResult: Boolean = false,
     val isQuizCompleted: Boolean = false,
     val errorMessageRes: Int? = null,
 ) {
     val score: Int
-        get() = correctQuestionIds.size
+        get() = questionResultsById.values.sumOf(RoomQuizQuestionResult::score)
+
+    val maxScore: Int
+        get() = quiz?.questions.orEmpty().sumOf(RoomQuizScoring::maxScore)
+}
+
+internal sealed interface RoomQuizPlayerEvent {
+    data object ExitCompleted : RoomQuizPlayerEvent
 }
 
 internal class RoomQuizPlayerViewModel(
@@ -47,7 +65,9 @@ internal class RoomQuizPlayerViewModel(
     roomName: String,
     quizId: String,
     private val roomRepository: RoomRepository,
+    authRepository: AuthRepository,
 ) : ViewModel() {
+    private val currentUserId = authRepository.getCurrentUser()?.uid.orEmpty()
     private var questionTimerJob: Job? = null
     private var activeTimedQuestionId: String? = null
 
@@ -60,6 +80,13 @@ internal class RoomQuizPlayerViewModel(
             ),
         )
     val uiState: StateFlow<RoomQuizPlayerUiState> = _uiState.asStateFlow()
+
+    private val _events =
+        MutableSharedFlow<RoomQuizPlayerEvent>(
+            extraBufferCapacity = 1,
+            onBufferOverflow = BufferOverflow.DROP_OLDEST,
+        )
+    val events: SharedFlow<RoomQuizPlayerEvent> = _events.asSharedFlow()
 
     init {
         observeQuiz()
@@ -181,40 +208,113 @@ internal class RoomQuizPlayerViewModel(
         syncTimerWithCurrentQuestion()
     }
 
-    internal fun finishQuiz() {
-        val quiz = _uiState.value.quiz ?: return
-        val correctQuestionIds =
-            quiz.questions
-                .filter(::isQuestionAnsweredCorrectly)
-                .map(RoomQuizQuestion::id)
-                .toSet()
+    internal fun submitCurrentAnswer() {
+        val state = _uiState.value
+        val currentQuestion = state.currentQuestion() ?: return
+        val maxIndex = (state.quiz?.questions?.lastIndex ?: 0).coerceAtLeast(0)
+        val isLastQuestion = state.currentQuestionIndex >= maxIndex
+        val questionResult =
+            state.questionResultsById[currentQuestion.id]
+                ?: state.buildQuestionResult(currentQuestion)
 
         _uiState.update {
             it.copy(
-                isQuizCompleted = true,
-                correctQuestionIds = correctQuestionIds,
+                correctQuestionIds =
+                    if (questionResult.isCorrect) {
+                        it.correctQuestionIds + currentQuestion.id
+                    } else {
+                        it.correctQuestionIds - currentQuestion.id
+                    },
+                questionResultsById = it.questionResultsById + (currentQuestion.id to questionResult),
+                lockedQuestionIds = it.lockedQuestionIds + currentQuestion.id,
+                currentQuestionIndex = if (isLastQuestion) it.currentQuestionIndex else it.currentQuestionIndex + 1,
                 remainingTimeSeconds = null,
                 errorMessageRes = null,
             )
         }
         clearTimer()
+
+        if (isLastQuestion) {
+            finishQuiz()
+        } else {
+            syncTimerWithCurrentQuestion()
+        }
     }
 
-    internal fun retryQuiz() {
+    internal fun finishQuiz() {
+        val result = completeCurrentAttempt() ?: return
+        saveQuizResult(result, exitAfterSave = false)
+    }
+
+    internal fun finishCurrentAttemptAndExit() {
+        val state = _uiState.value
+        if (state.isSavingResult) return
+        if (currentUserId.isBlank()) {
+            _events.tryEmit(RoomQuizPlayerEvent.ExitCompleted)
+            return
+        }
+
+        val result = completeCurrentAttempt() ?: return
+        saveQuizResult(result, exitAfterSave = true)
+    }
+
+    private fun completeCurrentAttempt(): RoomQuizResult? {
+        val state = _uiState.value
+        val quiz = state.quiz ?: return null
+        val questionResultsById =
+            quiz.questions.associate { question ->
+                question.id to (state.questionResultsById[question.id] ?: state.buildQuestionResult(question))
+            }
+        val correctQuestionIds =
+            questionResultsById.values
+                .filter(RoomQuizQuestionResult::isCorrect)
+                .map(RoomQuizQuestionResult::questionId)
+                .toSet()
+        val questionResults = quiz.questions.mapNotNull { questionResultsById[it.id] }
+
         _uiState.update {
             it.copy(
-                currentQuestionIndex = 0,
-                selectedOptionIndexes = emptyMap(),
-                fillInAnswers = emptyMap(),
-                scrambleAnswerSlots = emptyMap(),
-                correctQuestionIds = emptySet(),
-                lockedQuestionIds = emptySet(),
+                isQuizCompleted = true,
+                correctQuestionIds = correctQuestionIds,
+                questionResultsById = questionResultsById,
                 remainingTimeSeconds = null,
-                isQuizCompleted = false,
                 errorMessageRes = null,
             )
         }
-        syncTimerWithCurrentQuestion()
+        clearTimer()
+
+        return state.toResult(
+            userId = currentUserId,
+            questionResults = questionResults,
+        )
+    }
+
+    private fun saveQuizResult(
+        result: RoomQuizResult,
+        exitAfterSave: Boolean,
+    ) {
+        if (currentUserId.isBlank()) return
+        _uiState.update { it.copy(isSavingResult = true, errorMessageRes = null) }
+
+        viewModelScope.launch {
+            when (val saveResult = roomRepository.saveQuizResult(result)) {
+                is RoomOperationResult.Success -> {
+                    _uiState.update { it.copy(isSavingResult = false) }
+                    if (exitAfterSave) {
+                        _events.tryEmit(RoomQuizPlayerEvent.ExitCompleted)
+                    }
+                }
+
+                is RoomOperationResult.Error -> {
+                    _uiState.update {
+                        it.copy(
+                            isSavingResult = false,
+                            errorMessageRes = saveResult.messageRes,
+                        )
+                    }
+                }
+            }
+        }
     }
 
     private fun observeQuiz() {
@@ -346,21 +446,21 @@ internal class RoomQuizPlayerViewModel(
         val currentQuestion = state.currentQuestion()
         if (state.isQuizCompleted || currentQuestion?.id != questionId) return
 
-        val maxIndex = (state.quiz?.questions?.lastIndex ?: 0).coerceAtLeast(0)
-        val isLastQuestion = state.currentQuestionIndex >= maxIndex
         _uiState.update {
             it.copy(
                 lockedQuestionIds = it.lockedQuestionIds + questionId,
-                currentQuestionIndex = if (isLastQuestion) it.currentQuestionIndex else it.currentQuestionIndex + 1,
-                remainingTimeSeconds = null,
+                timedOutQuestionIds = it.timedOutQuestionIds + questionId,
+                questionResultsById =
+                    currentQuestion
+                        ?.let { question ->
+                            it.questionResultsById +
+                                (questionId to it.buildQuestionResult(question, isTimedOut = true))
+                        }
+                        ?: it.questionResultsById,
+                remainingTimeSeconds = 0,
             )
         }
-
-        if (isLastQuestion) {
-            finishQuiz()
-        } else {
-            syncTimerWithCurrentQuestion()
-        }
+        clearTimer()
     }
 
     private fun clearTimer(clearRemainingTime: Boolean = false) {
@@ -385,6 +485,84 @@ private fun RoomQuizPlayerUiState.currentTimedQuestionId(): String? {
     val currentQuestion = currentQuestion() ?: return null
     return if (currentQuestion.timeLimitSeconds != null) currentQuestion.id else null
 }
+
+private fun RoomQuizPlayerUiState.toResult(
+    userId: String,
+    questionResults: List<RoomQuizQuestionResult>,
+): RoomQuizResult =
+    RoomQuizResult(
+        roomId = roomId,
+        quizId = quizId,
+        userId = userId,
+        scoringVersion = RoomQuizScoring.VERSION,
+        answeredQuestionCount = questionResults.count(RoomQuizQuestionResult::isAnswered),
+        questionCount = quiz?.questionCount ?: questionResults.size,
+        score = questionResults.sumOf(RoomQuizQuestionResult::score),
+        maxScore = questionResults.sumOf(RoomQuizQuestionResult::maxScore),
+        questionResults = questionResults,
+        completedAtEpochMillis = System.currentTimeMillis(),
+    )
+
+private fun RoomQuizPlayerUiState.buildQuestionResult(
+    question: RoomQuizQuestion,
+    isTimedOut: Boolean = question.id in timedOutQuestionIds,
+): RoomQuizQuestionResult {
+    val timeLimitSeconds = question.timeLimitSeconds
+    val remainingSeconds =
+        if (timeLimitSeconds == null) {
+            null
+        } else if (isTimedOut) {
+            0
+        } else if (currentQuestion()?.id == question.id) {
+            remainingTimeSeconds?.coerceIn(0, timeLimitSeconds)
+        } else {
+            null
+        }
+    val isAnswered = isQuestionAnswered(question)
+    val isCorrect = isAnswered && isQuestionAnsweredCorrectly(question) && !isTimedOut
+    val score =
+        RoomQuizScoring.score(
+            question = question,
+            isCorrect = isCorrect,
+            remainingTimeSeconds = remainingSeconds,
+            isTimedOut = isTimedOut,
+        )
+
+    return RoomQuizQuestionResult(
+        questionId = question.id,
+        isAnswered = isAnswered,
+        isCorrect = isCorrect,
+        score = score,
+        maxScore = RoomQuizScoring.maxScore(question),
+        timeLimitSeconds = timeLimitSeconds,
+        remainingTimeSeconds = remainingSeconds,
+    )
+}
+
+private fun RoomQuizPlayerUiState.isQuestionAnsweredCorrectly(question: RoomQuizQuestion): Boolean =
+    when (question) {
+        is RoomQuizQuestion.MultipleChoice -> selectedOptionIndexes[question.id] == question.correctOptionIndex
+        is RoomQuizQuestion.FillInBlank ->
+            normalizeAnswer(fillInAnswers[question.id]) ==
+                normalizeAnswer(question.answerText)
+        is RoomQuizQuestion.WordScramble -> {
+            val tilesById = question.buildScrambleTiles().associateBy(ScrambleTile::id)
+            normalizeAnswer(
+                scrambleAnswerSlots[question.id]
+                    .orEmpty()
+                    .mapNotNull(tilesById::get)
+                    .map(ScrambleTile::letter)
+                    .joinToString(separator = ""),
+            ) == normalizeAnswer(question.answerWord)
+        }
+    }
+
+private fun RoomQuizPlayerUiState.isQuestionAnswered(question: RoomQuizQuestion): Boolean =
+    when (question) {
+        is RoomQuizQuestion.MultipleChoice -> question.id in selectedOptionIndexes
+        is RoomQuizQuestion.FillInBlank -> fillInAnswers[question.id]?.isNotBlank() == true
+        is RoomQuizQuestion.WordScramble -> scrambleAnswerSlots[question.id]?.any { it != null } == true
+    }
 
 private fun Set<String>.addIfNotNull(value: String?): Set<String> = if (value == null) this else this + value
 

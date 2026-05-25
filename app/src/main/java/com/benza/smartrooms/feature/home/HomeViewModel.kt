@@ -10,6 +10,7 @@ import com.benza.smartrooms.data.room.model.RoomInvitation
 import com.benza.smartrooms.data.room.model.RoomInvitationAccess
 import com.benza.smartrooms.data.room.model.RoomOperationResult
 import com.benza.smartrooms.data.room.repository.RoomRepository
+import com.benza.smartrooms.util.orPrettyEmailLocalPart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -320,7 +321,7 @@ private fun AuthUser?.toInitials(): String =
         this
             ?.displayName
             ?.takeIf(String::isNotBlank)
-            ?: this?.email?.substringBefore("@").orEmpty()
+            ?: this?.email.orPrettyEmailLocalPart(this?.email)
     ).split(" ")
         .filter(String::isNotBlank)
         .take(2)

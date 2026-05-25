@@ -10,6 +10,7 @@ import com.benza.smartrooms.feature.createroom.CreateRoomViewModel
 import com.benza.smartrooms.feature.home.HomeViewModel
 import com.benza.smartrooms.feature.profile.ProfileViewModel
 import com.benza.smartrooms.feature.roomdetail.RoomDetailViewModel
+import com.benza.smartrooms.feature.roominvite.RoomInviteViewModel
 import com.benza.smartrooms.feature.roomquizbuilder.RoomQuizBuilderViewModel
 import com.benza.smartrooms.feature.roomquizplayer.RoomQuizPlayerViewModel
 import com.benza.smartrooms.feature.roomquizreview.RoomQuizReviewViewModel
@@ -29,18 +30,21 @@ internal val viewModelModule =
         viewModelOf(::RoleSelectionViewModel)
         viewModelOf(::HomeViewModel)
         viewModelOf(::CreateRoomViewModel)
-        viewModel { (roomId: String, roomName: String, announcementId: String?) ->
-            CreatePostViewModel(roomId, roomName, announcementId, get(), get())
+        viewModel { (roomId: String, roomName: String, announcementId: String?, viewOnly: Boolean) ->
+            CreatePostViewModel(roomId, roomName, announcementId, viewOnly, get(), get(), get())
         }
         viewModelOf(::ProfileViewModel)
         viewModel { (roomId: String, roomName: String, roomTopic: String, roomCefrLevel: String) ->
             RoomDetailViewModel(roomId, roomName, roomTopic, roomCefrLevel, get(), get(), get())
         }
+        viewModel { (roomId: String, roomName: String) ->
+            RoomInviteViewModel(roomId, roomName, get(), get(), get())
+        }
         viewModel { (roomId: String, roomName: String, roomTopic: String) ->
             RoomQuizBuilderViewModel(roomId, roomName, roomTopic, get())
         }
         viewModel { (roomId: String, roomName: String, quizId: String) ->
-            RoomQuizPlayerViewModel(roomId, roomName, quizId, get())
+            RoomQuizPlayerViewModel(roomId, roomName, quizId, get(), get())
         }
         viewModel { (roomId: String, roomName: String, quizId: String) ->
             RoomQuizReviewViewModel(roomId, roomName, quizId, get())

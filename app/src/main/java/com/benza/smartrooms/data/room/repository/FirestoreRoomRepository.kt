@@ -12,6 +12,7 @@ import com.benza.smartrooms.data.room.model.RoomInvitation
 import com.benza.smartrooms.data.room.model.RoomOperationResult
 import com.benza.smartrooms.data.room.model.RoomQuiz
 import com.benza.smartrooms.data.room.model.RoomQuizQuestion
+import com.benza.smartrooms.data.room.model.RoomQuizResult
 import com.benza.smartrooms.data.room.model.RoomQuizSummary
 import com.benza.smartrooms.data.room.model.UpdateAnnouncementRequest
 import com.benza.smartrooms.data.room.remote.FirebaseFunctionsRoomDataSource
@@ -113,6 +114,26 @@ internal class FirestoreRoomRepository(
             .map { RoomOperationResult.Success(it) as RoomOperationResult<RoomQuiz> }
             .catch { emit(RoomOperationResult.Error(it.toRoomErrorRes(), it.toDebugMessage())) }
             .flowOn(Dispatchers.IO)
+
+    override fun observeQuizResults(
+        userId: String,
+        roomId: String,
+    ): Flow<RoomOperationResult<List<RoomQuizResult>>> =
+        roomDataSource
+            .observeQuizResults(userId, roomId)
+            .map { RoomOperationResult.Success(it) as RoomOperationResult<List<RoomQuizResult>> }
+            .catch { emit(RoomOperationResult.Error(it.toRoomErrorRes(), it.toDebugMessage())) }
+            .flowOn(Dispatchers.IO)
+
+    override suspend fun saveQuizResult(result: RoomQuizResult): RoomOperationResult<Unit> =
+        withContext(Dispatchers.IO) {
+            runCatching {
+                roomDataSource.saveQuizResult(result)
+            }.fold(
+                onSuccess = { RoomOperationResult.Success(Unit) },
+                onFailure = { RoomOperationResult.Error(it.toRoomErrorRes(), it.toDebugMessage()) },
+            )
+        }
 
     /**
      * Streams room announcements from Firestore.

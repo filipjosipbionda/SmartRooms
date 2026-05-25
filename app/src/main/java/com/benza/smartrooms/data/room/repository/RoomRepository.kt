@@ -11,6 +11,7 @@ import com.benza.smartrooms.data.room.model.RoomInvitation
 import com.benza.smartrooms.data.room.model.RoomOperationResult
 import com.benza.smartrooms.data.room.model.RoomQuiz
 import com.benza.smartrooms.data.room.model.RoomQuizQuestion
+import com.benza.smartrooms.data.room.model.RoomQuizResult
 import com.benza.smartrooms.data.room.model.RoomQuizSummary
 import com.benza.smartrooms.data.room.model.UpdateAnnouncementRequest
 import kotlinx.coroutines.flow.Flow
@@ -61,6 +62,13 @@ internal interface RoomRepository {
         roomId: String,
         quizId: String,
     ): Flow<RoomOperationResult<RoomQuiz>>
+
+    fun observeQuizResults(
+        userId: String,
+        roomId: String,
+    ): Flow<RoomOperationResult<List<RoomQuizResult>>>
+
+    suspend fun saveQuizResult(result: RoomQuizResult): RoomOperationResult<Unit>
 
     /**
      * Observes announcements created for a room.

@@ -410,6 +410,29 @@ internal class RoomQuizBuilderViewModel(
             }
         }
 
+        val pendingQuizSummary =
+            buildPendingQuizSummary(
+                clientRequestId = clientRequestId,
+                title = title,
+                quizKind = state.selectedQuizKind,
+                topic = topic,
+                vocabularyWords = vocabularyWords,
+                cefrLevel = cefrLevel,
+                questionCount =
+                    if (state.selectedQuizKind == QuizKind.VOCABULARY) {
+                        vocabularyWords.size
+                    } else {
+                        questionCount ?: DEFAULT_QUESTION_COUNT
+                    },
+                questionType =
+                    if (state.selectedQuizKind == QuizKind.VOCABULARY) {
+                        QuestionType.WORD_SCRAMBLE
+                    } else {
+                        state.selectedQuestionType
+                    },
+                hasTimer = state.hasQuestionTimeLimit,
+            )
+
         _uiState.update {
             it.copy(
                 isGeneratingQuiz = true,
@@ -418,27 +441,12 @@ internal class RoomQuizBuilderViewModel(
                 vocabularyWordsErrorRes = null,
                 questionCountErrorRes = null,
                 questionTimeLimitErrorRes = null,
-                pendingQuizSummary =
-                    buildPendingQuizSummary(
-                        clientRequestId = clientRequestId,
-                        title = title,
-                        quizKind = state.selectedQuizKind,
-                        topic = topic,
-                        vocabularyWords = vocabularyWords,
-                        cefrLevel = cefrLevel,
-                        questionCount =
-                            if (state.selectedQuizKind == QuizKind.VOCABULARY) {
-                                vocabularyWords.size
-                            } else {
-                                questionCount ?: DEFAULT_QUESTION_COUNT
-                            },
-                        questionType =
-                            if (state.selectedQuizKind == QuizKind.VOCABULARY) {
-                                QuestionType.WORD_SCRAMBLE
-                            } else {
-                                state.selectedQuestionType
-                            },
-                    ),
+                pendingQuizSummary = pendingQuizSummary,
+                quizzes =
+                    listOf(pendingQuizSummary) +
+                        it.quizzes.filterNot { quiz ->
+                            quiz.id == pendingQuizSummary.id
+                        },
                 errorMessageRes = null,
                 errorMessageText = null,
                 infoMessageRes = R.string.room_quiz_generation_started,
@@ -710,6 +718,7 @@ private fun buildPendingQuizSummary(
     cefrLevel: String,
     questionCount: Int,
     questionType: QuestionType,
+    hasTimer: Boolean,
 ): RoomQuizSummary {
     val now = System.currentTimeMillis()
     return RoomQuizSummary(
@@ -727,6 +736,7 @@ private fun buildPendingQuizSummary(
         cefrLevel = cefrLevel,
         questionType = questionType,
         questionCount = questionCount,
+        hasTimer = hasTimer,
         status = RoomQuizStatus.GENERATING,
         createdAtEpochMillis = now,
     )

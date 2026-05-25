@@ -8,6 +8,7 @@ import com.benza.smartrooms.data.auth.repository.AuthRepository
 import com.benza.smartrooms.data.userprofile.model.TeacherApprovalStatus
 import com.benza.smartrooms.data.userprofile.model.UserProfileOperationResult
 import com.benza.smartrooms.data.userprofile.repository.UserProfileRepository
+import com.benza.smartrooms.util.orPrettyEmailLocalPart
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -80,7 +81,7 @@ internal class RoleSelectionViewModel(
         }
 
         viewModelScope.launch {
-            when (val result = userProfileRepository.selectStudentRole(user.uid)) {
+            when (val result = userProfileRepository.selectStudentRole(user)) {
                 is UserProfileOperationResult.Success -> {
                     _uiState.update {
                         it.copy(
@@ -240,4 +241,4 @@ private fun AuthUser?.displayNameOrFallback(): String =
     this
         ?.displayName
         ?.takeIf(String::isNotBlank)
-        ?: this?.email?.substringBefore("@").orEmpty()
+        ?: this?.email.orPrettyEmailLocalPart(this?.email)

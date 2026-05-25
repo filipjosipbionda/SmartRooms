@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -37,11 +38,9 @@ import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.PrimaryTabRow
@@ -63,10 +62,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
@@ -165,16 +165,16 @@ internal fun RoomQuizBuilderScreen(
     onInfoMessageShown: () -> Unit,
 ) {
     val snackbarHostState = remember { SnackbarHostState() }
-    val context = LocalContext.current
     val pagerState = rememberPagerState(pageCount = { QuizPage.entries.size })
     val scope = rememberCoroutineScope()
+    val infoMessage = uiState.infoMessageRes?.let { stringResource(it) }
     val errorBannerMessage =
         uiState.errorMessageText
             ?: uiState.errorMessageRes?.let { stringResource(it) }
 
-    LaunchedEffect(uiState.infoMessageRes) {
-        val messageRes = uiState.infoMessageRes ?: return@LaunchedEffect
-        snackbarHostState.showSnackbar(context.getString(messageRes))
+    LaunchedEffect(infoMessage) {
+        val message = infoMessage ?: return@LaunchedEffect
+        snackbarHostState.showSnackbar(message)
         onInfoMessageShown()
     }
 
@@ -281,7 +281,7 @@ internal fun RoomQuizBuilderScreen(
             enter = fadeIn() + slideInVertically(initialOffsetY = { it / 2 }),
             exit = fadeOut() + slideOutVertically(targetOffsetY = { it / 2 }),
         ) {
-            QuizSelectionBottomBar(
+            QuizSelectionOverlay(
                 selectedCount = uiState.selectedQuizIds.size,
                 selectableQuizCount = uiState.quizzes.count(RoomQuizSummary::canBeDeleted),
                 isDeleting = uiState.isDeletingQuiz,
@@ -351,7 +351,7 @@ private fun SavedQuizzesPage(
     var expandedMenuQuizId by remember { mutableStateOf<String?>(null) }
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(bottom = if (isSelectionMode) 112.dp else 8.dp),
+        contentPadding = PaddingValues(bottom = if (isSelectionMode) 156.dp else 8.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         item {
@@ -419,7 +419,7 @@ private fun QuizSelectionHintCard() {
 }
 
 @Composable
-private fun QuizSelectionBottomBar(
+private fun QuizSelectionOverlay(
     selectedCount: Int,
     selectableQuizCount: Int,
     isDeleting: Boolean,
@@ -439,59 +439,73 @@ private fun QuizSelectionBottomBar(
         tonalElevation = 6.dp,
         shadowElevation = 12.dp,
     ) {
-        Row(
+        Column(
             modifier =
                 Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 12.dp, vertical = 10.dp),
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-            verticalAlignment = Alignment.CenterVertically,
+                    .padding(horizontal = 16.dp, vertical = 14.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            FilledIconButton(
-                onClick = onClearQuizSelection,
-                enabled = !isDeleting,
-                colors =
-                    IconButtonDefaults.filledIconButtonColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceVariant,
-                        contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                    ),
-            ) {
-                Icon(
-                    imageVector = Icons.Filled.Close,
-                    contentDescription = stringResource(R.string.action_clear_selection),
-                )
-            }
-            Surface(
-                color = MaterialTheme.colorScheme.primaryContainer,
-                contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                shape = MaterialTheme.shapes.large,
-            ) {
-                Text(
-                    text = stringResource(R.string.room_quizzes_selection_count, selectedCount),
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                    style = MaterialTheme.typography.labelLarge,
-                    fontWeight = FontWeight.SemiBold,
-                )
-            }
             Row(
-                modifier = Modifier.weight(1f),
-                horizontalArrangement = Arrangement.End,
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                if (!areAllSelectableSelected) {
-                    TextButton(
-                        onClick = onSelectAllQuizzes,
-                        enabled = !isDeleting,
-                    ) {
-                        Text(
-                            text = stringResource(R.string.action_select),
-                            maxLines = 1,
-                        )
-                    }
+                IconButton(
+                    onClick = onClearQuizSelection,
+                    enabled = !isDeleting,
+                    modifier = Modifier.size(SELECTION_OVERLAY_ICON_SIZE),
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.Close,
+                        contentDescription = stringResource(R.string.action_clear_selection),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Text(
+                    text = stringResource(R.string.room_quizzes_selection_count, selectedCount),
+                    modifier = Modifier.weight(1f),
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    textAlign = TextAlign.Center,
+                )
+                Surface(
+                    modifier = Modifier.size(SELECTION_OVERLAY_ICON_SIZE),
+                    color = Color.Transparent,
+                ) {}
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Button(
+                    onClick = onSelectAllQuizzes,
+                    enabled = !isDeleting && !areAllSelectableSelected,
+                    modifier =
+                        Modifier
+                            .weight(1f)
+                            .height(SELECTION_OVERLAY_BUTTON_HEIGHT),
+                    colors =
+                        ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                            contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                        ),
+                ) {
+                    Text(
+                        text = stringResource(R.string.action_select_all),
+                        maxLines = 1,
+                    )
                 }
                 Button(
                     onClick = onRequestDeleteSelectedQuizzes,
                     enabled = selectedCount > 0 && !isDeleting,
+                    modifier =
+                        Modifier
+                            .weight(1f)
+                            .height(SELECTION_OVERLAY_BUTTON_HEIGHT),
                     colors =
                         ButtonDefaults.buttonColors(
                             containerColor = MaterialTheme.colorScheme.error,
@@ -513,6 +527,9 @@ private fun QuizSelectionBottomBar(
         }
     }
 }
+
+private val SELECTION_OVERLAY_ICON_SIZE = 36.dp
+private val SELECTION_OVERLAY_BUTTON_HEIGHT = 44.dp
 
 @Composable
 private fun CreateQuizPage(

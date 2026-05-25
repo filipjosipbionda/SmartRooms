@@ -12,6 +12,10 @@ import com.benza.smartrooms.data.room.model.RoomAnnouncementAttachment
 import com.benza.smartrooms.data.room.model.RoomOperationResult
 import com.benza.smartrooms.data.room.model.UpdateAnnouncementRequest
 import com.benza.smartrooms.data.room.repository.RoomRepository
+import com.benza.smartrooms.data.userprofile.model.UserProfileOperationResult
+import com.benza.smartrooms.data.userprofile.model.UserRole
+import com.benza.smartrooms.data.userprofile.repository.UserProfileRepository
+import com.benza.smartrooms.util.orPrettyEmailLocalPart
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -25,6 +29,7 @@ import kotlinx.coroutines.launch
 internal enum class CreatePostMode {
     CREATE,
     EDIT,
+    VIEW,
 }
 
 internal data class CreatePostAttachmentUiState(
@@ -63,11 +68,15 @@ internal class CreatePostViewModel(
     roomId: String,
     roomName: String,
     announcementId: String?,
+    private val viewOnly: Boolean,
     private val roomRepository: RoomRepository,
     authRepository: AuthRepository,
+    private val userProfileRepository: UserProfileRepository,
 ) : ViewModel() {
     private val currentUser = authRepository.getCurrentUser()
     private var originalRemoteAttachments: List<RoomAnnouncementAttachment> = emptyList()
+    private var originalAnnouncement: RoomAnnouncement? = null
+    private var currentUserRole: UserRole? = null
 
     private val _uiState =
         MutableStateFlow(
@@ -75,8 +84,14 @@ internal class CreatePostViewModel(
                 roomId = roomId,
                 roomName = roomName,
                 announcementId = announcementId,
-                mode = if (announcementId == null) CreatePostMode.CREATE else CreatePostMode.EDIT,
+                mode =
+                    when {
+                        announcementId == null -> CreatePostMode.CREATE
+                        viewOnly -> CreatePostMode.VIEW
+                        else -> CreatePostMode.EDIT
+                    },
                 isLoadingPost = announcementId != null,
+                canEdit = !viewOnly,
             ),
         )
     val uiState: StateFlow<CreatePostUiState> = _uiState.asStateFlow()
@@ -89,6 +104,7 @@ internal class CreatePostViewModel(
     val events: SharedFlow<CreatePostEvent> = _events.asSharedFlow()
 
     init {
+        observeCurrentUserProfile()
         if (announcementId != null) {
             loadAnnouncement(announcementId)
         }
@@ -243,6 +259,7 @@ internal class CreatePostViewModel(
             when (state.mode) {
                 CreatePostMode.CREATE -> createPost(user, title, message)
                 CreatePostMode.EDIT -> updatePost(title, message)
+                CreatePostMode.VIEW -> Unit
             }
         }
     }
@@ -394,7 +411,8 @@ internal class CreatePostViewModel(
     }
 
     private fun populateExistingAnnouncement(announcement: RoomAnnouncement) {
-        val canEdit = announcement.authorId == currentUser?.uid
+        originalAnnouncement = announcement
+        val canEdit = !viewOnly && canEditAnnouncement(announcement)
         originalRemoteAttachments = announcement.attachments
         _uiState.update {
             it.copy(
@@ -403,11 +421,37 @@ internal class CreatePostViewModel(
                 attachments = announcement.attachments.map(RoomAnnouncementAttachment::toUiState),
                 isLoadingPost = false,
                 canEdit = canEdit,
-                errorMessageRes = if (canEdit) null else R.string.error_post_edit_forbidden,
+                errorMessageRes = if (viewOnly || canEdit) null else R.string.error_post_edit_forbidden,
                 errorMessageText = null,
             )
         }
     }
+
+    private fun observeCurrentUserProfile() {
+        val user = currentUser ?: return
+
+        viewModelScope.launch {
+            userProfileRepository.observeProfile(user).collect { result ->
+                currentUserRole =
+                    when (result) {
+                        is UserProfileOperationResult.Success -> result.data.role
+                        is UserProfileOperationResult.Error -> null
+                    }
+                val announcement = originalAnnouncement ?: return@collect
+                val canEdit = !viewOnly && canEditAnnouncement(announcement)
+                _uiState.update {
+                    it.copy(
+                        canEdit = canEdit,
+                        errorMessageRes = if (viewOnly || canEdit) null else R.string.error_post_edit_forbidden,
+                        errorMessageText = null,
+                    )
+                }
+            }
+        }
+    }
+
+    private fun canEditAnnouncement(announcement: RoomAnnouncement): Boolean =
+        announcement.authorId == currentUser?.uid && currentUserRole == UserRole.TEACHER
 }
 
 private const val MAX_ATTACHMENTS = 10
@@ -417,7 +461,7 @@ private const val MAX_ATTACHMENT_SIZE_BYTES = MAX_ATTACHMENT_SIZE_MB * 1024L * 1
 private fun AuthUser.displayNameOrEmailName(): String =
     displayName
         ?.takeIf(String::isNotBlank)
-        ?: email?.substringBefore("@").orEmpty()
+        ?: email.orPrettyEmailLocalPart(email)
 
 private fun List<String>.toReadableNameList(): String =
     when {

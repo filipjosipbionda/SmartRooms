@@ -51,7 +51,8 @@ internal class AuthGateViewModel(
             it.copy(state = AuthGateState.Loading)
         }
 
-        if (authRepository.getCurrentUser() == null) {
+        val currentUser = authRepository.getCurrentUser()
+        if (currentUser == null) {
             _uiState.update {
                 it.copy(state = AuthGateState.Resolved(StartupDestination.LOGIN))
             }
@@ -59,26 +60,40 @@ internal class AuthGateViewModel(
         }
 
         viewModelScope.launch {
-            when (val result = userProfileRepository.resolveStartupReadiness()) {
-                is UserProfileOperationResult.Success -> {
+            when (val ensureProfileResult = userProfileRepository.ensureProfile(currentUser)) {
+                is UserProfileOperationResult.Error -> {
                     _uiState.update {
-                        it.copy(
-                            state =
-                                AuthGateState.Resolved(
-                                    if (result.data.isReady) {
-                                        StartupDestination.HOME
-                                    } else {
-                                        StartupDestination.ROLE_SELECTION
-                                    },
-                                ),
-                        )
+                        it.copy(state = AuthGateState.Error(ensureProfileResult.messageRes))
                     }
                 }
 
-                is UserProfileOperationResult.Error -> {
-                    _uiState.update {
-                        it.copy(state = AuthGateState.Error(result.messageRes))
-                    }
+                is UserProfileOperationResult.Success -> {
+                    resolveStartupDestination()
+                }
+            }
+        }
+    }
+
+    private suspend fun resolveStartupDestination() {
+        when (val result = userProfileRepository.resolveStartupReadiness()) {
+            is UserProfileOperationResult.Success -> {
+                _uiState.update {
+                    it.copy(
+                        state =
+                            AuthGateState.Resolved(
+                                if (result.data.isReady) {
+                                    StartupDestination.HOME
+                                } else {
+                                    StartupDestination.ROLE_SELECTION
+                                },
+                            ),
+                    )
+                }
+            }
+
+            is UserProfileOperationResult.Error -> {
+                _uiState.update {
+                    it.copy(state = AuthGateState.Error(result.messageRes))
                 }
             }
         }

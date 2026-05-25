@@ -10,10 +10,12 @@ import com.benza.smartrooms.feature.auth.login.LoginRouteScreen
 import com.benza.smartrooms.feature.auth.register.RegisterRouteScreen
 import com.benza.smartrooms.feature.auth.roleselection.RoleSelectionRouteScreen
 import com.benza.smartrooms.feature.createpost.CreatePostRouteScreen
+import com.benza.smartrooms.feature.createpost.PostDetailRouteScreen
 import com.benza.smartrooms.feature.createroom.CreateRoomRouteScreen
 import com.benza.smartrooms.feature.home.HomeRouteScreen
 import com.benza.smartrooms.feature.profile.ProfileRouteScreen
 import com.benza.smartrooms.feature.roomdetail.RoomDetailRouteScreen
+import com.benza.smartrooms.feature.roominvite.RoomInviteRouteScreen
 import com.benza.smartrooms.feature.roomquizbuilder.RoomQuizBuilderRouteScreen
 import com.benza.smartrooms.feature.roomquizplayer.RoomQuizPlayerRouteScreen
 import com.benza.smartrooms.feature.roomquizreview.RoomQuizReviewRouteScreen
@@ -124,6 +126,15 @@ internal fun SmartRoomsNavHost(
                         ),
                     )
                 },
+                onOpenPostClick = { announcementId ->
+                    navController.navigate(
+                        PostDetailRoute(
+                            roomId = route.roomId,
+                            roomName = route.roomName,
+                            announcementId = announcementId,
+                        ),
+                    )
+                },
                 onEditPostClick = { announcementId ->
                     navController.navigate(
                         CreatePostRoute(
@@ -142,7 +153,7 @@ internal fun SmartRoomsNavHost(
                         ),
                     )
                 },
-                onOpenQuizzesClick = {
+                onOpenQuizManagerClick = {
                     navController.navigate(
                         RoomQuizBuilderRoute(
                             roomId = route.roomId,
@@ -151,6 +162,23 @@ internal fun SmartRoomsNavHost(
                         ),
                     )
                 },
+                onOpenInviteClick = {
+                    navController.navigate(
+                        RoomInviteRoute(
+                            roomId = route.roomId,
+                            roomName = route.roomName,
+                        ),
+                    )
+                },
+            )
+        }
+
+        composable<RoomInviteRoute> { backStackEntry ->
+            val route = backStackEntry.toRoute<RoomInviteRoute>()
+            RoomInviteRouteScreen(
+                roomId = route.roomId,
+                roomName = route.roomName,
+                onBackClick = { navController.popBackStack() },
             )
         }
 
@@ -162,6 +190,16 @@ internal fun SmartRoomsNavHost(
                 announcementId = route.announcementId,
                 onBackClick = { navController.popBackStack() },
                 onPostCompleted = { navController.popBackStack() },
+            )
+        }
+
+        composable<PostDetailRoute> { backStackEntry ->
+            val route = backStackEntry.toRoute<PostDetailRoute>()
+            PostDetailRouteScreen(
+                roomId = route.roomId,
+                roomName = route.roomName,
+                announcementId = route.announcementId,
+                onBackClick = { navController.popBackStack() },
             )
         }
 

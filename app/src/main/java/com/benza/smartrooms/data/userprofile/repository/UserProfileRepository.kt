@@ -33,7 +33,7 @@ internal interface UserProfileRepository {
     /**
      * Persists the student role for the supplied user and completes onboarding.
      */
-    suspend fun selectStudentRole(uid: String): UserProfileOperationResult<Unit>
+    suspend fun selectStudentRole(user: AuthUser): UserProfileOperationResult<Unit>
 
     /**
      * Creates or refreshes a pending teacher request for the supplied user.

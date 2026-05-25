@@ -52,7 +52,7 @@ internal class FirebaseAuthRepository(
                 runCatching {
                     authDataSource.updateDisplayName(fullName)
                 }
-                authDataSource.currentUser()?.toAuthUser() ?: user.toAuthUser()
+                (authDataSource.currentUser()?.toAuthUser() ?: user.toAuthUser()).copy(displayName = fullName)
             }.fold(
                 onSuccess = { AuthOperationResult.Success(it) },
                 onFailure = { AuthOperationResult.Error(it.toAuthErrorRes()) },
@@ -113,4 +113,5 @@ private fun com.google.firebase.auth.FirebaseUser.toAuthUser(): AuthUser =
         uid = uid,
         email = email,
         displayName = displayName,
+        photoUrl = photoUrl?.toString(),
     )

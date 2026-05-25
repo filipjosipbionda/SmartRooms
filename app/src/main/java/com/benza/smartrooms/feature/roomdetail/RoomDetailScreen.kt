@@ -1,15 +1,22 @@
 package com.benza.smartrooms.feature.roomdetail
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -17,28 +24,36 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.outlined.Campaign
 import androidx.compose.material.icons.outlined.PersonAdd
 import androidx.compose.material.icons.outlined.Quiz
+import androidx.compose.material.icons.outlined.Timer
+import androidx.compose.material.icons.outlined.TimerOff
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.MenuDefaults
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -50,37 +65,48 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.Dialog
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.benza.smartrooms.R
 import com.benza.smartrooms.data.room.model.QuestionType
-import com.benza.smartrooms.data.room.model.RoomInvitationAccess
+import com.benza.smartrooms.data.room.model.QuizKind
+import com.benza.smartrooms.data.room.model.RoomQuizResult
 import com.benza.smartrooms.data.room.model.RoomQuizStatus
-import com.benza.smartrooms.data.userprofile.model.UserRole
+import com.benza.smartrooms.data.room.model.RoomQuizSummary
 import com.benza.smartrooms.ui.components.AttachmentPreview
 import com.benza.smartrooms.ui.components.AuthFeedbackBanner
 import com.benza.smartrooms.ui.components.AuthFeedbackType
+import com.benza.smartrooms.ui.components.UserAvatar
 import com.benza.smartrooms.ui.components.attachmentTypeLabel
 import com.benza.smartrooms.ui.theme.Coral
 import com.benza.smartrooms.ui.theme.Lagoon
 import com.benza.smartrooms.ui.theme.SmartRoomsTheme
+import kotlinx.coroutines.launch
 import org.koin.androidx.compose.koinViewModel
 import org.koin.core.parameter.parametersOf
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
+
+private enum class RoomDetailPage(
+    val labelRes: Int,
+    val icon: ImageVector,
+) {
+    FEED(R.string.room_detail_nav_feed, Icons.Outlined.Campaign),
+    QUIZZES(R.string.room_detail_nav_quizzes, Icons.Outlined.Quiz),
+}
 
 @Composable
 internal fun RoomDetailRouteScreen(
@@ -90,9 +116,11 @@ internal fun RoomDetailRouteScreen(
     roomCefrLevel: String,
     onBackClick: () -> Unit,
     onCreatePostClick: () -> Unit,
+    onOpenPostClick: (String) -> Unit,
     onEditPostClick: (String) -> Unit,
     onOpenQuizClick: (String) -> Unit,
-    onOpenQuizzesClick: () -> Unit,
+    onOpenQuizManagerClick: () -> Unit,
+    onOpenInviteClick: () -> Unit,
     viewModel: RoomDetailViewModel =
         koinViewModel(
             parameters = { parametersOf(roomId, roomName, roomTopic, roomCefrLevel) },
@@ -104,13 +132,11 @@ internal fun RoomDetailRouteScreen(
         uiState = uiState.value,
         onBackClick = onBackClick,
         onCreatePostClick = onCreatePostClick,
+        onOpenPostClick = onOpenPostClick,
         onEditPostClick = onEditPostClick,
         onOpenQuizClick = onOpenQuizClick,
-        onOpenQuizzesClick = onOpenQuizzesClick,
-        onShowInviteDialog = viewModel::showInviteDialog,
-        onDismissInviteDialog = viewModel::dismissInviteDialog,
-        onInviteSearchQueryChange = viewModel::onInviteSearchQueryChanged,
-        onSendInviteClick = viewModel::sendInvite,
+        onOpenQuizManagerClick = onOpenQuizManagerClick,
+        onOpenInviteClick = onOpenInviteClick,
         onRequestAnnouncementDeletionClick = viewModel::requestAnnouncementDeletion,
         onDismissAnnouncementDeletion = viewModel::dismissAnnouncementDeletion,
         onDeleteAnnouncementClick = viewModel::deleteAnnouncement,
@@ -123,32 +149,80 @@ internal fun RoomDetailScreen(
     uiState: RoomDetailUiState,
     onBackClick: () -> Unit,
     onCreatePostClick: () -> Unit,
+    onOpenPostClick: (String) -> Unit,
     onEditPostClick: (String) -> Unit,
     onOpenQuizClick: (String) -> Unit,
-    onOpenQuizzesClick: () -> Unit,
-    onShowInviteDialog: () -> Unit,
-    onDismissInviteDialog: () -> Unit,
-    onInviteSearchQueryChange: (String) -> Unit,
-    onSendInviteClick: (InviteUserUiState) -> Unit,
-    onRequestAnnouncementDeletionClick: (RoomFeedItemUiState.Announcement) -> Unit,
+    onOpenQuizManagerClick: () -> Unit,
+    onOpenInviteClick: () -> Unit,
+    onRequestAnnouncementDeletionClick: (RoomAnnouncementCardUiState) -> Unit,
     onDismissAnnouncementDeletion: () -> Unit,
     onDeleteAnnouncementClick: () -> Unit,
     onInfoMessageShown: () -> Unit,
 ) {
     val snackbarHostState = remember { SnackbarHostState() }
-    val context = LocalContext.current
+    val pagerState = rememberPagerState(pageCount = { RoomDetailPage.entries.size })
+    val scope = rememberCoroutineScope()
+    var isFeedActionsExpanded by remember { mutableStateOf(false) }
+    val infoMessage = uiState.infoMessageRes?.let { stringResource(it) }
 
-    LaunchedEffect(uiState.infoMessageRes) {
-        val messageRes = uiState.infoMessageRes ?: return@LaunchedEffect
-        snackbarHostState.showSnackbar(context.getString(messageRes))
+    LaunchedEffect(infoMessage) {
+        val message = infoMessage ?: return@LaunchedEffect
+        snackbarHostState.showSnackbar(message)
         onInfoMessageShown()
+    }
+
+    LaunchedEffect(pagerState.currentPage) {
+        isFeedActionsExpanded = false
     }
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         snackbarHost = { SnackbarHost(snackbarHostState) },
+        floatingActionButton = {
+            when (RoomDetailPage.entries[pagerState.currentPage]) {
+                RoomDetailPage.FEED ->
+                    FeedActionsFab(
+                        expanded = isFeedActionsExpanded,
+                        showInviteAction = uiState.isCurrentUserOwner,
+                        onExpandedChange = { isFeedActionsExpanded = it },
+                        onCreatePostClick = onCreatePostClick,
+                        onInviteClick = onOpenInviteClick,
+                    )
+
+                RoomDetailPage.QUIZZES ->
+                    if (uiState.canManageQuizzes) {
+                        ExtendedFloatingActionButton(
+                            onClick = onOpenQuizManagerClick,
+                            icon = {
+                                Icon(
+                                    imageVector = Icons.Outlined.Quiz,
+                                    contentDescription = null,
+                                )
+                            },
+                            text = { Text(stringResource(R.string.action_manage_quizzes)) },
+                        )
+                    }
+            }
+        },
+        bottomBar = {
+            NavigationBar {
+                RoomDetailPage.entries.forEachIndexed { index, page ->
+                    NavigationBarItem(
+                        selected = pagerState.currentPage == index,
+                        onClick = { scope.launch { pagerState.animateScrollToPage(index) } },
+                        icon = {
+                            Icon(
+                                imageVector = page.icon,
+                                contentDescription = null,
+                            )
+                        },
+                        label = { Text(stringResource(page.labelRes)) },
+                    )
+                }
+            }
+        },
     ) { paddingValues ->
-        LazyColumn(
+        Column(
             modifier =
                 Modifier
                     .fillMaxSize()
@@ -156,86 +230,41 @@ internal fun RoomDetailScreen(
                     .padding(horizontal = 20.dp, vertical = 16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            item {
-                RoomDetailTopBar(
-                    roomName = uiState.roomName,
-                    onBackClick = onBackClick,
+            RoomDetailTopBar(
+                roomName = uiState.roomName,
+                onBackClick = onBackClick,
+            )
+            if (uiState.errorMessageRes != null) {
+                AuthFeedbackBanner(
+                    message = stringResource(uiState.errorMessageRes),
+                    type = AuthFeedbackType.Error,
                 )
             }
-            item {
-                RoomSummaryCard(
-                    roomTopic = uiState.roomTopic,
-                    cefrLevel = uiState.cefrLevel,
-                    postCount = uiState.feedItems.count { it is RoomFeedItemUiState.Announcement },
-                    quizCount = uiState.feedItems.count { it is RoomFeedItemUiState.Quiz },
-                    isLoadingRoom = uiState.isLoadingRoom,
-                    isLoadingFeed = uiState.isLoadingFeed,
-                    onCreateAnnouncementClick = onCreatePostClick,
-                    onOpenQuizzesClick = onOpenQuizzesClick,
-                    onInviteClick = onShowInviteDialog,
-                    showInviteAction = uiState.isCurrentUserOwner,
-                )
-            }
-            item {
-                if (uiState.errorMessageRes != null) {
-                    AuthFeedbackBanner(
-                        message = stringResource(uiState.errorMessageRes),
-                        type = AuthFeedbackType.Error,
-                    )
-                }
-            }
-            item {
-                FeedSectionHeader()
-            }
-            when {
-                uiState.isLoadingFeed && uiState.feedItems.isEmpty() -> {
-                    item {
-                        FeedLoadingSkeleton()
-                    }
-                }
+            HorizontalPager(
+                state = pagerState,
+                modifier = Modifier.fillMaxSize(),
+            ) { page ->
+                when (RoomDetailPage.entries[page]) {
+                    RoomDetailPage.FEED ->
+                        FeedPage(
+                            announcements = uiState.announcements,
+                            isLoading = uiState.isLoadingFeed,
+                            onOpenAnnouncementClick = onOpenPostClick,
+                            onEditAnnouncementClick = onEditPostClick,
+                            onDeleteAnnouncementClick = onRequestAnnouncementDeletionClick,
+                        )
 
-                uiState.feedItems.isEmpty() -> {
-                    item {
-                        FeedPlaceholderCard(text = stringResource(R.string.room_detail_feed_empty))
-                    }
+                    RoomDetailPage.QUIZZES ->
+                        QuizzesPage(
+                            quizzes = uiState.quizzes,
+                            quizResultsByQuizId = uiState.quizResultsByQuizId,
+                            isLoading = uiState.isLoadingQuizzes,
+                            canManageQuizzes = uiState.canManageQuizzes,
+                            onOpenQuizClick = onOpenQuizClick,
+                        )
                 }
-
-                else -> {
-                    items(
-                        items = uiState.feedItems,
-                        key = ::feedItemKey,
-                        contentType = ::feedItemContentType,
-                    ) { item ->
-                        when (item) {
-                            is RoomFeedItemUiState.Announcement ->
-                                AnnouncementFeedCard(
-                                    item = item,
-                                    onEditClick = { onEditPostClick(item.id) },
-                                    onDeleteClick = { onRequestAnnouncementDeletionClick(item) },
-                                )
-
-                            is RoomFeedItemUiState.Quiz ->
-                                QuizFeedCard(
-                                    item = item,
-                                    onOpenQuizClick = onOpenQuizClick,
-                                )
-                        }
-                    }
-                }
-            }
-            item {
-                Spacer(modifier = Modifier.height(8.dp))
             }
         }
-    }
-
-    if (uiState.isInviteDialogOpen) {
-        RoomInviteDialog(
-            uiState = uiState,
-            onSearchQueryChange = onInviteSearchQueryChange,
-            onSendInviteClick = onSendInviteClick,
-            onDismiss = onDismissInviteDialog,
-        )
     }
 
     if (uiState.pendingAnnouncementDeletion != null) {
@@ -246,6 +275,91 @@ internal fun RoomDetailScreen(
             onConfirm = onDeleteAnnouncementClick,
         )
     }
+}
+
+@Composable
+private fun FeedActionsFab(
+    expanded: Boolean,
+    showInviteAction: Boolean,
+    onExpandedChange: (Boolean) -> Unit,
+    onCreatePostClick: () -> Unit,
+    onInviteClick: () -> Unit,
+) {
+    Column(
+        horizontalAlignment = Alignment.End,
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        AnimatedVisibility(
+            visible = expanded,
+            enter = fadeIn() + slideInVertically(initialOffsetY = { it / 2 }),
+            exit = fadeOut() + slideOutVertically(targetOffsetY = { it / 2 }),
+        ) {
+            Column(
+                horizontalAlignment = Alignment.End,
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                if (showInviteAction) {
+                    SmallFabAction(
+                        icon = Icons.Outlined.PersonAdd,
+                        label = stringResource(R.string.action_invite_to_room),
+                        onClick = {
+                            onExpandedChange(false)
+                            onInviteClick()
+                        },
+                    )
+                }
+                SmallFabAction(
+                    icon = Icons.Outlined.Campaign,
+                    label = stringResource(R.string.action_create_post),
+                    onClick = {
+                        onExpandedChange(false)
+                        onCreatePostClick()
+                    },
+                )
+            }
+        }
+
+        ExtendedFloatingActionButton(
+            onClick = { onExpandedChange(!expanded) },
+            icon = {
+                Icon(
+                    imageVector = if (expanded) Icons.Filled.Close else Icons.Filled.Add,
+                    contentDescription = stringResource(R.string.room_detail_fab_actions),
+                )
+            },
+            text = {
+                Text(
+                    stringResource(
+                        if (expanded) {
+                            R.string.action_cancel
+                        } else {
+                            R.string.room_detail_fab_actions_short
+                        },
+                    ),
+                )
+            },
+        )
+    }
+}
+
+@Composable
+private fun SmallFabAction(
+    icon: ImageVector,
+    label: String,
+    onClick: () -> Unit,
+) {
+    ExtendedFloatingActionButton(
+        onClick = onClick,
+        icon = {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+            )
+        },
+        text = { Text(label) },
+        containerColor = MaterialTheme.colorScheme.surface,
+        contentColor = MaterialTheme.colorScheme.onSurface,
+    )
 }
 
 @Composable
@@ -264,34 +378,302 @@ private fun RoomDetailTopBar(
                 contentDescription = stringResource(R.string.action_back),
             )
         }
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = roomName,
-                style = MaterialTheme.typography.headlineMedium,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
+        Text(
+            text = roomName,
+            style = MaterialTheme.typography.headlineMedium,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
+@Composable
+private fun FeedPage(
+    announcements: List<RoomAnnouncementCardUiState>,
+    isLoading: Boolean,
+    onOpenAnnouncementClick: (String) -> Unit,
+    onEditAnnouncementClick: (String) -> Unit,
+    onDeleteAnnouncementClick: (RoomAnnouncementCardUiState) -> Unit,
+) {
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(bottom = 96.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        item {
+            SectionIntro(
+                title = stringResource(R.string.room_detail_feed_title),
+                subtitle = stringResource(R.string.room_detail_feed_posts_subtitle),
             )
-            Text(
-                text = stringResource(R.string.room_detail_feed_label),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+        }
+        when {
+            isLoading -> {
+                item { FeedLoadingSkeleton() }
+            }
+
+            announcements.isEmpty() -> {
+                item {
+                    FeedPlaceholderCard(
+                        text = stringResource(R.string.room_detail_feed_empty_posts),
+                    )
+                }
+            }
+
+            else -> {
+                items(
+                    items = announcements,
+                    key = RoomAnnouncementCardUiState::id,
+                ) { item ->
+                    AnnouncementCard(
+                        item = item,
+                        onClick = { onOpenAnnouncementClick(item.id) },
+                        onEditClick = { onEditAnnouncementClick(item.id) },
+                        onDeleteClick = { onDeleteAnnouncementClick(item) },
+                    )
+                }
+            }
         }
     }
 }
 
 @Composable
-private fun RoomSummaryCard(
-    roomTopic: String,
-    cefrLevel: String,
-    postCount: Int,
-    quizCount: Int,
-    isLoadingRoom: Boolean,
-    isLoadingFeed: Boolean,
-    onCreateAnnouncementClick: () -> Unit,
-    onOpenQuizzesClick: () -> Unit,
-    onInviteClick: () -> Unit,
-    showInviteAction: Boolean,
+private fun QuizzesPage(
+    quizzes: List<RoomQuizSummary>,
+    quizResultsByQuizId: Map<String, RoomQuizResult>,
+    isLoading: Boolean,
+    canManageQuizzes: Boolean,
+    onOpenQuizClick: (String) -> Unit,
+) {
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(bottom = 96.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        item {
+            SectionIntro(
+                title = stringResource(R.string.room_detail_quizzes_title),
+                subtitle =
+                    stringResource(
+                        if (canManageQuizzes) {
+                            R.string.room_detail_quizzes_subtitle_manager
+                        } else {
+                            R.string.room_detail_quizzes_subtitle_student
+                        },
+                    ),
+            )
+        }
+        when {
+            isLoading -> {
+                item { QuizLoadingSkeleton() }
+            }
+
+            quizzes.isEmpty() -> {
+                item {
+                    FeedPlaceholderCard(
+                        text =
+                            stringResource(
+                                if (canManageQuizzes) {
+                                    R.string.room_detail_quizzes_empty_manager
+                                } else {
+                                    R.string.room_detail_quizzes_empty_student
+                                },
+                            ),
+                    )
+                }
+            }
+
+            else -> {
+                items(
+                    items = quizzes,
+                    key = RoomQuizSummary::id,
+                ) { quiz ->
+                    QuizCard(
+                        quiz = quiz,
+                        result = quizResultsByQuizId[quiz.id],
+                        onOpenQuizClick = onOpenQuizClick,
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SectionIntro(
+    title: String,
+    subtitle: String,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(
+            text = title,
+            style = MaterialTheme.typography.titleLarge,
+        )
+        Text(
+            text = subtitle,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+@Composable
+private fun AnnouncementCard(
+    item: RoomAnnouncementCardUiState,
+    onClick: () -> Unit,
+    onEditClick: () -> Unit,
+    onDeleteClick: () -> Unit,
+) {
+    var isMenuExpanded by remember(item.id) { mutableStateOf(false) }
+    FeedCardShell(
+        createdAt = item.createdAtEpochMillis.toRoomDateLabel(),
+        backgroundColor = Lagoon.copy(alpha = 0.08f),
+        authorName = item.authorName,
+        onClick = onClick,
+        actions =
+            if (item.canManage) {
+                {
+                    Column(horizontalAlignment = Alignment.End) {
+                        IconButton(
+                            modifier = Modifier.size(36.dp),
+                            onClick = { isMenuExpanded = true },
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.MoreVert,
+                                contentDescription = stringResource(R.string.room_detail_post_actions_menu),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        DropdownMenu(
+                            expanded = isMenuExpanded,
+                            onDismissRequest = { isMenuExpanded = false },
+                            modifier = Modifier.width(220.dp),
+                            shape = MaterialTheme.shapes.large,
+                            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                            tonalElevation = 6.dp,
+                            shadowElevation = 8.dp,
+                        ) {
+                            DropdownMenuItem(
+                                leadingIcon = {
+                                    Icon(
+                                        imageVector = Icons.Filled.Edit,
+                                        contentDescription = null,
+                                    )
+                                },
+                                text = { Text(stringResource(R.string.action_edit_post)) },
+                                onClick = {
+                                    isMenuExpanded = false
+                                    onEditClick()
+                                },
+                                colors =
+                                    MenuDefaults.itemColors(
+                                        textColor = MaterialTheme.colorScheme.onSurface,
+                                        leadingIconColor = MaterialTheme.colorScheme.primary,
+                                    ),
+                            )
+                            DropdownMenuItem(
+                                leadingIcon = {
+                                    Icon(
+                                        imageVector = Icons.Filled.Delete,
+                                        contentDescription = null,
+                                    )
+                                },
+                                text = { Text(stringResource(R.string.action_delete_post)) },
+                                onClick = {
+                                    isMenuExpanded = false
+                                    onDeleteClick()
+                                },
+                                colors =
+                                    MenuDefaults.itemColors(
+                                        textColor = MaterialTheme.colorScheme.error,
+                                        leadingIconColor = MaterialTheme.colorScheme.error,
+                                    ),
+                            )
+                        }
+                    }
+                }
+            } else {
+                null
+            },
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(
+                text = item.title,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                text = item.message,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        if (item.attachments.isNotEmpty()) {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                item.attachments.take(FEED_ATTACHMENT_PREVIEW_LIMIT).forEach { attachment ->
+                    Surface(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = MaterialTheme.shapes.large,
+                        color = MaterialTheme.colorScheme.background.copy(alpha = 0.72f),
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            AttachmentPreview(
+                                modifier = Modifier.size(56.dp),
+                                model = attachment.downloadUrl,
+                                mimeType = attachment.mimeType,
+                                fileName = attachment.name,
+                            )
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = attachment.name,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                                Text(
+                                    text = attachmentTypeLabel(attachment.name, attachment.mimeType),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1,
+                                )
+                            }
+                        }
+                    }
+                }
+                val hiddenAttachmentCount = item.attachments.size - FEED_ATTACHMENT_PREVIEW_LIMIT
+                if (hiddenAttachmentCount > 0) {
+                    Surface(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = MaterialTheme.shapes.large,
+                        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    ) {
+                        Text(
+                            text =
+                                stringResource(
+                                    R.string.room_detail_more_attachments,
+                                    hiddenAttachmentCount,
+                                ),
+                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+                            style = MaterialTheme.typography.labelLarge,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun QuizCard(
+    quiz: RoomQuizSummary,
+    result: RoomQuizResult?,
+    onOpenQuizClick: (String) -> Unit,
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -303,127 +685,112 @@ private fun RoomSummaryCard(
                 Modifier
                     .fillMaxWidth()
                     .background(
-                        brush =
-                            Brush.linearGradient(
-                                colors =
-                                    listOf(
-                                        Lagoon.copy(alpha = 0.16f),
-                                        MaterialTheme.colorScheme.surface,
-                                        Coral.copy(alpha = 0.14f),
-                                    ),
+                        Brush.horizontalGradient(
+                            listOf(
+                                MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.34f),
+                                MaterialTheme.colorScheme.surface,
                             ),
-                    ).padding(20.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp),
+                        ),
+                    ).padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                if (isLoadingRoom && roomTopic.isBlank()) {
-                    SkeletonLine(
-                        widthFraction = 0.62f,
-                        height = 20.dp,
-                    )
-                } else {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.Top,
+            ) {
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(5.dp),
+                ) {
                     Text(
-                        text = stringResource(R.string.room_detail_topic_value, roomTopic),
+                        text = quiz.title,
                         style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        text = stringResource(R.string.room_quizzes_topic_value, quiz.topic),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        text = quiz.createdAtEpochMillis.toRoomDateLabel(),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
                 }
-                Text(
-                    text = stringResource(R.string.room_detail_feed_subtitle),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                QuizTimerIconBadge(hasTimer = quiz.hasTimer)
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                FeedMetaCard(
+                    modifier = Modifier.weight(1f),
+                    value = stringResource(labelRes(quiz.quizKind)),
+                    label = stringResource(R.string.room_quizzes_kind_title),
+                )
+                FeedMetaCard(
+                    modifier = Modifier.weight(1f),
+                    value =
+                        quiz.cefrLevel.ifBlank {
+                            stringResource(R.string.room_detail_level_not_set)
+                        },
+                    label = stringResource(R.string.room_detail_feed_level_metric),
+                )
+                FeedMetaCard(
+                    modifier = Modifier.weight(1f),
+                    value = stringResource(labelRes(quiz.questionType)),
+                    label = stringResource(R.string.room_detail_question_type_title),
+                )
+                FeedMetaCard(
+                    modifier = Modifier.weight(1f),
+                    value = quiz.questionCount.toString(),
+                    label = stringResource(R.string.room_detail_question_count_title),
                 )
             }
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-            ) {
-                if (isLoadingFeed) {
-                    SummaryMetricSkeletonCard(
-                        modifier = Modifier.weight(1f),
-                    )
-                    SummaryMetricSkeletonCard(
-                        modifier = Modifier.weight(1f),
-                    )
-                } else {
-                    SummaryMetricCard(
-                        modifier = Modifier.weight(1f),
-                        value = postCount.toString(),
-                        label = stringResource(R.string.room_detail_feed_posts_metric),
-                    )
-                    SummaryMetricCard(
-                        modifier = Modifier.weight(1f),
-                        value = quizCount.toString(),
-                        label = stringResource(R.string.room_detail_feed_quizzes_metric),
-                    )
-                }
-                if (isLoadingRoom) {
-                    SummaryMetricSkeletonCard(
-                        modifier = Modifier.weight(1f),
-                    )
-                } else {
-                    SummaryMetricCard(
+
+            if (result != null) {
+                val displayMaxScore = maxOf(result.maxScore, quiz.maxScore)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    FeedMetaCard(
                         modifier = Modifier.weight(1f),
                         value =
-                            cefrLevel.ifBlank {
-                                stringResource(R.string.room_detail_level_not_set)
-                            },
-                        label = stringResource(R.string.room_detail_feed_level_metric),
+                            stringResource(
+                                R.string.room_quiz_result_progress_value,
+                                result.answeredQuestionCount,
+                                result.questionCount,
+                            ),
+                        label = stringResource(R.string.room_quiz_result_progress_label),
+                    )
+                    FeedMetaCard(
+                        modifier = Modifier.weight(1f),
+                        value =
+                            stringResource(
+                                R.string.room_quiz_result_score_value,
+                                result.score,
+                                displayMaxScore,
+                            ),
+                        label = stringResource(R.string.room_quiz_result_score_label),
                     )
                 }
-            }
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
+            } else if (quiz.status == RoomQuizStatus.READY) {
                 Button(
-                    onClick = onCreateAnnouncementClick,
-                    modifier = Modifier.weight(1f),
-                ) {
-                    Text(
-                        text = stringResource(R.string.action_create_post),
-                        maxLines = 1,
-                    )
-                }
-                OutlinedButton(
-                    onClick = onOpenQuizzesClick,
-                    modifier = Modifier.weight(1f),
-                ) {
-                    Text(
-                        text = stringResource(R.string.action_open_quizzes),
-                        maxLines = 1,
-                    )
-                }
-            }
-            if (showInviteAction) {
-                OutlinedButton(
-                    onClick = onInviteClick,
+                    onClick = { onOpenQuizClick(quiz.id) },
                     modifier = Modifier.fillMaxWidth(),
                 ) {
-                    Icon(
-                        imageVector = Icons.Outlined.PersonAdd,
-                        contentDescription = null,
-                        modifier = Modifier.size(18.dp),
-                    )
-                    Spacer(modifier = Modifier.size(10.dp))
-                    Text(stringResource(R.string.action_invite_to_room))
-                }
-            } else if (isLoadingRoom) {
-                Surface(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = MaterialTheme.shapes.large,
-                    color = MaterialTheme.colorScheme.background.copy(alpha = 0.88f),
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 13.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        SkeletonLine(
-                            widthFraction = 0.42f,
-                            height = 14.dp,
-                        )
-                    }
+                    Text(stringResource(R.string.action_solve_quiz))
                 }
             }
         }
@@ -431,57 +798,111 @@ private fun RoomSummaryCard(
 }
 
 @Composable
-private fun SummaryMetricCard(
-    modifier: Modifier = Modifier,
-    value: String,
-    label: String,
-) {
-    Surface(
-        modifier = modifier,
-        shape = MaterialTheme.shapes.large,
-        color = MaterialTheme.colorScheme.background.copy(alpha = 0.88f),
+private fun FeedPlaceholderCard(text: String) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
     ) {
-        Column(
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
-            verticalArrangement = Arrangement.spacedBy(2.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            Text(
-                text = value,
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold,
-                maxLines = 1,
-            )
-            Text(
-                text = label,
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-            )
-        }
+        Text(
+            text = text,
+            modifier = Modifier.padding(18.dp),
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }
 
 @Composable
-private fun SummaryMetricSkeletonCard(modifier: Modifier = Modifier) {
-    Surface(
-        modifier = modifier,
-        shape = MaterialTheme.shapes.large,
-        color = MaterialTheme.colorScheme.background.copy(alpha = 0.88f),
+private fun FeedLoadingSkeleton() {
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        FeedSkeletonCard(
+            accentBrush =
+                Brush.horizontalGradient(
+                    listOf(
+                        Lagoon.copy(alpha = 0.14f),
+                        MaterialTheme.colorScheme.surface,
+                    ),
+                ),
+        )
+        FeedSkeletonCard(
+            accentBrush =
+                Brush.horizontalGradient(
+                    listOf(
+                        Lagoon.copy(alpha = 0.08f),
+                        MaterialTheme.colorScheme.surface,
+                    ),
+                ),
+        )
+    }
+}
+
+@Composable
+private fun QuizLoadingSkeleton() {
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        FeedSkeletonCard(
+            accentBrush =
+                Brush.horizontalGradient(
+                    listOf(
+                        Coral.copy(alpha = 0.12f),
+                        MaterialTheme.colorScheme.surface,
+                    ),
+                ),
+        )
+        FeedSkeletonCard(
+            accentBrush =
+                Brush.horizontalGradient(
+                    listOf(
+                        Coral.copy(alpha = 0.08f),
+                        MaterialTheme.colorScheme.surface,
+                    ),
+                ),
+        )
+    }
+}
+
+@Composable
+private fun FeedSkeletonCard(accentBrush: Brush) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.extraLarge,
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
     ) {
         Column(
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .background(accentBrush)
+                    .padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             SkeletonLine(
-                widthFraction = 0.44f,
+                widthFraction = 0.28f,
+                height = 32.dp,
+            )
+            SkeletonLine(
+                widthFraction = 0.58f,
                 height = 20.dp,
             )
             SkeletonLine(
-                widthFraction = 0.66f,
-                height = 10.dp,
+                widthFraction = 0.92f,
+                height = 14.dp,
             )
+            SkeletonLine(
+                widthFraction = 0.76f,
+                height = 14.dp,
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                repeat(3) {
+                    SkeletonLine(
+                        widthFraction = 1f,
+                        height = 42.dp,
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+            }
         }
     }
 }
@@ -516,383 +937,29 @@ private fun SkeletonLine(
 }
 
 @Composable
-private fun FeedSectionHeader() {
-    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text(
-                text = stringResource(R.string.room_detail_feed_title),
-                style = MaterialTheme.typography.titleMedium,
-            )
-            Text(
-                text = stringResource(R.string.room_detail_feed_timeline_hint),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-    }
-}
-
-private fun feedItemKey(item: RoomFeedItemUiState): String =
-    when (item) {
-        is RoomFeedItemUiState.Announcement -> "announcement:${item.id}"
-        is RoomFeedItemUiState.Quiz -> "quiz:${item.id}"
-    }
-
-private fun feedItemContentType(item: RoomFeedItemUiState): String =
-    when (item) {
-        is RoomFeedItemUiState.Announcement -> "announcement"
-        is RoomFeedItemUiState.Quiz -> "quiz"
-    }
-
-@Composable
-private fun FeedPlaceholderCard(text: String) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-    ) {
-        Text(
-            text = text,
-            modifier = Modifier.padding(18.dp),
-            style = MaterialTheme.typography.bodyLarge,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-    }
-}
-
-@Composable
-private fun FeedLoadingSkeleton() {
-    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        FeedSkeletonCard(
-            accentBrush =
-                Brush.horizontalGradient(
-                    listOf(
-                        Lagoon.copy(alpha = 0.14f),
-                        MaterialTheme.colorScheme.surface,
-                    ),
-                ),
-            showAction = false,
-        )
-        FeedSkeletonCard(
-            accentBrush =
-                Brush.horizontalGradient(
-                    listOf(
-                        Coral.copy(alpha = 0.12f),
-                        MaterialTheme.colorScheme.surface,
-                    ),
-                ),
-            showAction = true,
-        )
-    }
-}
-
-@Composable
-private fun FeedSkeletonCard(
-    accentBrush: Brush,
-    showAction: Boolean,
-) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = MaterialTheme.shapes.extraLarge,
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-    ) {
-        Column(
-            modifier =
-                Modifier
-                    .fillMaxWidth()
-                    .background(accentBrush)
-                    .padding(18.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                SkeletonLine(
-                    widthFraction = 0.28f,
-                    height = 32.dp,
-                )
-                SkeletonLine(
-                    widthFraction = 0.18f,
-                    height = 12.dp,
-                )
-            }
-            SkeletonLine(
-                widthFraction = 0.52f,
-                height = 20.dp,
-            )
-            SkeletonLine(
-                widthFraction = 0.92f,
-                height = 14.dp,
-            )
-            SkeletonLine(
-                widthFraction = 0.74f,
-                height = 14.dp,
-            )
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                repeat(3) {
-                    Surface(
-                        modifier = Modifier.weight(1f),
-                        shape = MaterialTheme.shapes.large,
-                        color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.24f),
-                    ) {
-                        Column(
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 10.dp),
-                            verticalArrangement = Arrangement.spacedBy(8.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                        ) {
-                            SkeletonLine(
-                                widthFraction = 0.46f,
-                                height = 16.dp,
-                            )
-                            SkeletonLine(
-                                widthFraction = 0.68f,
-                                height = 10.dp,
-                            )
-                        }
-                    }
-                }
-            }
-            if (showAction) {
-                SkeletonLine(
-                    widthFraction = 1f,
-                    height = 40.dp,
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun AnnouncementFeedCard(
-    item: RoomFeedItemUiState.Announcement,
-    onEditClick: () -> Unit,
-    onDeleteClick: () -> Unit,
-) {
-    var isMenuExpanded by remember(item.id) { mutableStateOf(false) }
-    FeedCardShell(
-        icon = Icons.Outlined.Campaign,
-        label = stringResource(R.string.room_detail_feed_post),
-        createdAt = item.createdAtEpochMillis.toRoomDateLabel(),
-        accentBrush =
-            Brush.horizontalGradient(
-                listOf(
-                    Lagoon.copy(alpha = 0.14f),
-                    MaterialTheme.colorScheme.surface,
-                ),
-            ),
-        actions =
-            if (item.canManage) {
-                {
-                    Column(horizontalAlignment = Alignment.End) {
-                        IconButton(onClick = { isMenuExpanded = true }) {
-                            Icon(
-                                imageVector = Icons.Filled.MoreVert,
-                                contentDescription = stringResource(R.string.room_detail_post_actions_menu),
-                            )
-                        }
-                        DropdownMenu(
-                            expanded = isMenuExpanded,
-                            onDismissRequest = { isMenuExpanded = false },
-                            shape = MaterialTheme.shapes.extraLarge,
-                            containerColor = MaterialTheme.colorScheme.surface,
-                            tonalElevation = 8.dp,
-                            shadowElevation = 10.dp,
-                        ) {
-                            DropdownMenuItem(
-                                leadingIcon = {
-                                    Icon(
-                                        imageVector = Icons.Filled.Edit,
-                                        contentDescription = null,
-                                    )
-                                },
-                                text = { Text(stringResource(R.string.action_edit_post)) },
-                                onClick = {
-                                    isMenuExpanded = false
-                                    onEditClick()
-                                },
-                            )
-                            DropdownMenuItem(
-                                leadingIcon = {
-                                    Icon(
-                                        imageVector = Icons.Filled.Delete,
-                                        contentDescription = null,
-                                    )
-                                },
-                                text = { Text(stringResource(R.string.action_delete_post)) },
-                                onClick = {
-                                    isMenuExpanded = false
-                                    onDeleteClick()
-                                },
-                            )
-                        }
-                    }
-                }
-            } else {
-                null
-            },
-    ) {
-        Text(
-            text = item.title,
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.SemiBold,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
-        Text(
-            text = item.message,
-            style = MaterialTheme.typography.bodyMedium,
-        )
-        if (item.attachments.isNotEmpty()) {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                item.attachments.forEach { attachment ->
-                    Surface(
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = MaterialTheme.shapes.large,
-                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.38f),
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
-                            horizontalArrangement = Arrangement.spacedBy(10.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            AttachmentPreview(
-                                modifier = Modifier.size(56.dp),
-                                model = attachment.downloadUrl,
-                                mimeType = attachment.mimeType,
-                                fileName = attachment.name,
-                            )
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = attachment.name,
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                )
-                                Text(
-                                    text = attachmentTypeLabel(attachment.name, attachment.mimeType),
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    maxLines = 1,
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        Text(
-            text = stringResource(R.string.room_detail_post_author, item.authorName),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-    }
-}
-
-@Composable
-private fun QuizFeedCard(
-    item: RoomFeedItemUiState.Quiz,
-    onOpenQuizClick: (String) -> Unit,
-) {
-    val isReady = item.status == RoomQuizStatus.READY
-    FeedCardShell(
-        icon = Icons.Outlined.Quiz,
-        label = stringResource(R.string.room_detail_feed_quiz),
-        createdAt = item.createdAtEpochMillis.toRoomDateLabel(),
-        accentBrush =
-            Brush.horizontalGradient(
-                listOf(
-                    Coral.copy(alpha = 0.12f),
-                    MaterialTheme.colorScheme.surface,
-                ),
-            ),
-    ) {
-        Text(
-            text = item.title,
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.SemiBold,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
-        Text(
-            text = stringResource(R.string.room_quizzes_topic_value, item.topic),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            FeedMetaCard(
-                modifier = Modifier.weight(1f),
-                value = item.cefrLevel,
-                label = stringResource(R.string.room_detail_feed_level_metric),
-            )
-            FeedMetaCard(
-                modifier = Modifier.weight(1f),
-                value = stringResource(item.questionTypeLabelRes),
-                label = stringResource(R.string.room_detail_question_type_title),
-            )
-            FeedMetaCard(
-                modifier = Modifier.weight(1f),
-                value = item.questionCount.toString(),
-                label = stringResource(R.string.room_detail_question_count_title),
-            )
-        }
-        QuizFeedStatusChip(status = item.status)
-        Button(
-            onClick = { onOpenQuizClick(item.id) },
-            enabled = isReady,
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            Text(stringResource(item.status.actionLabelRes()))
-        }
-    }
-}
-
-@Composable
-private fun QuizFeedStatusChip(status: RoomQuizStatus) {
-    val labelRes =
-        when (status) {
-            RoomQuizStatus.GENERATING -> R.string.room_quiz_status_generating
-            RoomQuizStatus.REVIEW -> R.string.room_quiz_status_review
-            RoomQuizStatus.READY -> R.string.room_quiz_status_ready
-            RoomQuizStatus.FAILED -> R.string.room_quiz_status_failed
-        }
-    Surface(
-        shape = MaterialTheme.shapes.large,
-        color = MaterialTheme.colorScheme.background.copy(alpha = 0.92f),
-    ) {
-        Text(
-            text = stringResource(labelRes),
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-            style = MaterialTheme.typography.labelMedium,
-        )
-    }
-}
-
-private fun RoomQuizStatus.actionLabelRes(): Int =
-    when (this) {
-        RoomQuizStatus.GENERATING -> R.string.room_quiz_status_generating
-        RoomQuizStatus.REVIEW -> R.string.action_review_quiz
-        RoomQuizStatus.READY -> R.string.action_solve_quiz
-        RoomQuizStatus.FAILED -> R.string.room_quiz_status_failed
-    }
-
-@Composable
 private fun FeedCardShell(
-    icon: ImageVector,
-    label: String,
+    icon: ImageVector? = null,
+    label: String? = null,
     createdAt: String,
-    accentBrush: Brush,
+    accentBrush: Brush? = null,
+    backgroundColor: Color? = null,
+    authorName: String? = null,
+    onClick: (() -> Unit)? = null,
     actions: (@Composable () -> Unit)? = null,
     content: @Composable ColumnScope.() -> Unit,
 ) {
+    val resolvedBackgroundColor = backgroundColor ?: MaterialTheme.colorScheme.surface
     Card(
-        modifier = Modifier.fillMaxWidth(),
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .then(
+                    if (onClick != null) {
+                        Modifier.clickable(onClick = onClick)
+                    } else {
+                        Modifier
+                    },
+                ),
         shape = MaterialTheme.shapes.extraLarge,
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
     ) {
@@ -900,31 +967,85 @@ private fun FeedCardShell(
             modifier =
                 Modifier
                     .fillMaxWidth()
-                    .background(accentBrush)
-                    .padding(18.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                FeedLabelChip(icon = icon, label = label)
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(4.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(
-                        text = createdAt,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                    )
-                    actions?.invoke()
+                    .then(
+                        if (accentBrush != null) {
+                            Modifier.background(accentBrush)
+                        } else {
+                            Modifier.background(resolvedBackgroundColor)
+                        },
+                    ).padding(20.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+            content = {
+                if (!authorName.isNullOrBlank()) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            text = createdAt,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        Spacer(modifier = Modifier.weight(1f))
+                        actions?.invoke()
+                    }
+                    PostAuthorHeader(authorName = authorName)
+                } else {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        if (icon != null && label != null) {
+                            FeedLabelChip(
+                                icon = icon,
+                                label = label,
+                            )
+                        }
+                        Spacer(modifier = Modifier.weight(1f))
+                        Text(
+                            text = createdAt,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        actions?.invoke()
+                    }
                 }
-            }
-            content()
-        }
+                content()
+            },
+        )
+    }
+}
+
+@Composable
+private fun PostAuthorHeader(
+    authorName: String,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        UserAvatar(
+            displayName = authorName,
+            photoUrl = null,
+            modifier = Modifier.size(34.dp),
+        )
+        Text(
+            text = authorName,
+            modifier = Modifier.weight(1f),
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.onSurface,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
     }
 }
 
@@ -932,8 +1053,10 @@ private fun FeedCardShell(
 private fun FeedLabelChip(
     icon: ImageVector,
     label: String,
+    modifier: Modifier = Modifier,
 ) {
     Surface(
+        modifier = modifier,
         shape = MaterialTheme.shapes.large,
         color = MaterialTheme.colorScheme.background.copy(alpha = 0.88f),
     ) {
@@ -951,6 +1074,7 @@ private fun FeedLabelChip(
                 text = label,
                 style = MaterialTheme.typography.labelLarge,
                 maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
             )
         }
     }
@@ -961,11 +1085,12 @@ private fun FeedMetaCard(
     modifier: Modifier = Modifier,
     value: String,
     label: String,
+    containerColor: Color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.38f),
 ) {
     Surface(
         modifier = modifier,
         shape = MaterialTheme.shapes.large,
-        color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.38f),
+        color = containerColor,
     ) {
         Column(
             modifier = Modifier.padding(horizontal = 10.dp, vertical = 10.dp),
@@ -975,6 +1100,7 @@ private fun FeedMetaCard(
             Text(
                 text = value,
                 style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onSurface,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
@@ -989,134 +1115,74 @@ private fun FeedMetaCard(
 }
 
 @Composable
+private fun QuizTimerIconBadge(
+    hasTimer: Boolean,
+    containerColor: Color = MaterialTheme.colorScheme.background.copy(alpha = 0.9f),
+    iconTint: Color =
+        if (hasTimer) {
+            MaterialTheme.colorScheme.primary
+        } else {
+            MaterialTheme.colorScheme.onSurfaceVariant
+        },
+) {
+    val label =
+        if (hasTimer) {
+            stringResource(R.string.room_quiz_timer_enabled_value)
+        } else {
+            stringResource(R.string.room_quiz_timer_none_value)
+        }
+    Surface(
+        shape = MaterialTheme.shapes.medium,
+        color = containerColor,
+    ) {
+        Icon(
+            imageVector =
+                if (hasTimer) {
+                    Icons.Outlined.Timer
+                } else {
+                    Icons.Outlined.TimerOff
+                },
+            contentDescription = label,
+            modifier =
+                Modifier
+                    .padding(8.dp)
+                    .size(18.dp),
+            tint = iconTint,
+        )
+    }
+}
+
+@Composable
 private fun DeleteAnnouncementDialog(
     pendingDeletion: PendingAnnouncementDeletion,
     isDeleting: Boolean,
     onDismiss: () -> Unit,
     onConfirm: () -> Unit,
 ) {
-    Dialog(onDismissRequest = onDismiss) {
-        Surface(
-            shape = MaterialTheme.shapes.extraLarge,
-            color = MaterialTheme.colorScheme.surface,
-        ) {
-            Column(
-                modifier = Modifier.padding(24.dp),
-                verticalArrangement = Arrangement.spacedBy(18.dp),
-            ) {
-                Text(
-                    text = stringResource(R.string.delete_post_dialog_title),
-                    style = MaterialTheme.typography.headlineSmall,
-                )
-                Text(
-                    text =
-                        stringResource(
-                            R.string.delete_post_dialog_message,
-                            pendingDeletion.announcementTitle,
-                        ),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.End),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    TextButton(
-                        onClick = onDismiss,
-                        enabled = !isDeleting,
-                    ) {
-                        Text(stringResource(R.string.action_cancel))
-                    }
-                    Button(
-                        onClick = onConfirm,
-                        enabled = !isDeleting,
-                    ) {
-                        Text(stringResource(R.string.action_delete_post))
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun RoomInviteDialog(
-    uiState: RoomDetailUiState,
-    onSearchQueryChange: (String) -> Unit,
-    onSendInviteClick: (InviteUserUiState) -> Unit,
-    onDismiss: () -> Unit,
-) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.room_invite_dialog_title)) },
+        title = { Text(stringResource(R.string.delete_post_dialog_title)) },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text(
-                    text = stringResource(R.string.room_invite_dialog_subtitle),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                OutlinedTextField(
-                    value = uiState.inviteSearchQuery,
-                    onValueChange = onSearchQueryChange,
-                    modifier = Modifier.fillMaxWidth(),
-                    enabled = !uiState.isSendingInvite,
-                    label = { Text(stringResource(R.string.label_user_search)) },
-                    singleLine = true,
-                )
-                when {
-                    uiState.inviteSearchQuery.length < 2 -> {
-                        Text(
-                            text = stringResource(R.string.room_invite_search_hint),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-
-                    uiState.isSearchingInviteUsers -> {
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(10.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(18.dp),
-                                strokeWidth = 2.dp,
-                            )
-                            Text(
-                                text = stringResource(R.string.room_invite_search_loading),
-                                style = MaterialTheme.typography.bodyMedium,
-                            )
-                        }
-                    }
-
-                    uiState.inviteSearchResults.isEmpty() -> {
-                        Text(
-                            text = stringResource(R.string.room_invite_search_empty),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-
-                    else -> {
-                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            uiState.inviteSearchResults.forEach { user ->
-                                InviteUserResultCard(
-                                    user = user,
-                                    isSendingInvite = uiState.isSendingInvite,
-                                    onSendInviteClick = { onSendInviteClick(user) },
-                                )
-                            }
-                        }
-                    }
-                }
+            Text(
+                text =
+                    stringResource(
+                        R.string.delete_post_dialog_message,
+                        pendingDeletion.announcementTitle,
+                    ),
+            )
+        },
+        confirmButton = {
+            Button(
+                onClick = onConfirm,
+                enabled = !isDeleting,
+            ) {
+                Text(stringResource(R.string.action_delete_post))
             }
         },
-        confirmButton = {},
         dismissButton = {
             TextButton(
                 onClick = onDismiss,
-                enabled = !uiState.isSendingInvite,
+                enabled = !isDeleting,
             ) {
                 Text(stringResource(R.string.action_cancel))
             }
@@ -1124,69 +1190,12 @@ private fun RoomInviteDialog(
     )
 }
 
-@Composable
-private fun InviteUserResultCard(
-    user: InviteUserUiState,
-    isSendingInvite: Boolean,
-    onSendInviteClick: () -> Unit,
-) {
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        shape = MaterialTheme.shapes.large,
-        color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.38f),
-    ) {
-        Row(
-            modifier = Modifier.padding(12.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = user.displayName,
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.SemiBold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Text(
-                    text = user.email,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Text(
-                    text =
-                        stringResource(
-                            R.string.room_invite_access_summary,
-                            stringResource(user.roleLabelRes()),
-                            stringResource(user.accessLabelRes()),
-                        ),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            Button(
-                onClick = onSendInviteClick,
-                enabled = !isSendingInvite,
-            ) {
-                Text(stringResource(R.string.action_send_invite))
-            }
-        }
-    }
-}
+private const val FEED_ATTACHMENT_PREVIEW_LIMIT = 3
 
-private fun InviteUserUiState.roleLabelRes(): Int =
-    when (role) {
-        UserRole.TEACHER -> R.string.profile_role_professor
-        UserRole.STUDENT -> R.string.profile_role_student
-        null -> R.string.profile_role_not_selected
-    }
-
-private fun InviteUserUiState.accessLabelRes(): Int =
-    when (access) {
-        RoomInvitationAccess.COLLABORATOR -> R.string.room_invite_access_collaborator
-        RoomInvitationAccess.MEMBER -> R.string.room_invite_access_member
+private fun labelRes(quizKind: QuizKind): Int =
+    when (quizKind) {
+        QuizKind.GRAMMAR -> R.string.room_quiz_kind_grammar
+        QuizKind.VOCABULARY -> R.string.room_quiz_kind_vocabulary
     }
 
 private fun Long.toRoomDateLabel(): String {
@@ -1206,9 +1215,11 @@ private fun RoomDetailScreenPreview() {
                     roomId = "room-1",
                     roomName = "English Grammar Room",
                     roomTopic = "Travel vocabulary",
-                    feedItems =
+                    cefrLevel = "B2",
+                    isCurrentUserOwner = true,
+                    announcements =
                         listOf(
-                            RoomFeedItemUiState.Announcement(
+                            RoomAnnouncementCardUiState(
                                 id = "announcement-1",
                                 createdAtEpochMillis = System.currentTimeMillis(),
                                 title = "Homework",
@@ -1217,29 +1228,33 @@ private fun RoomDetailScreenPreview() {
                                 attachments = emptyList(),
                                 canManage = true,
                             ),
-                            RoomFeedItemUiState.Quiz(
+                        ),
+                    quizzes =
+                        listOf(
+                            RoomQuizSummary(
                                 id = "quiz-1",
-                                createdAtEpochMillis = System.currentTimeMillis() - 3_600_000L,
                                 title = "Travel Essentials Quiz",
+                                quizKind = QuizKind.GRAMMAR,
                                 topic = "Travel vocabulary",
+                                vocabularyWords = emptyList(),
                                 cefrLevel = "B2",
-                                status = RoomQuizStatus.READY,
-                                questionTypeLabelRes = labelRes(QuestionType.MULTIPLE_CHOICE),
+                                questionType = QuestionType.MULTIPLE_CHOICE,
                                 questionCount = 10,
+                                status = RoomQuizStatus.READY,
+                                createdAtEpochMillis = System.currentTimeMillis() - 3_600_000L,
                             ),
                         ),
                     isLoadingRoom = false,
                     isLoadingFeed = false,
+                    isLoadingQuizzes = false,
                 ),
             onBackClick = {},
             onCreatePostClick = {},
+            onOpenPostClick = {},
             onEditPostClick = {},
             onOpenQuizClick = {},
-            onOpenQuizzesClick = {},
-            onShowInviteDialog = {},
-            onDismissInviteDialog = {},
-            onInviteSearchQueryChange = {},
-            onSendInviteClick = {},
+            onOpenQuizManagerClick = {},
+            onOpenInviteClick = {},
             onRequestAnnouncementDeletionClick = {},
             onDismissAnnouncementDeletion = {},
             onDeleteAnnouncementClick = {},

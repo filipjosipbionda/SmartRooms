@@ -1,5 +1,6 @@
 package com.benza.smartrooms.feature.roomquizplayer
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Arrangement
@@ -17,7 +18,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -31,6 +33,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
@@ -54,6 +57,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.benza.smartrooms.R
 import com.benza.smartrooms.data.room.model.RoomQuiz
 import com.benza.smartrooms.data.room.model.RoomQuizQuestion
+import com.benza.smartrooms.data.room.model.RoomQuizScoring
 import com.benza.smartrooms.feature.roomdetail.labelRes
 import com.benza.smartrooms.ui.components.AuthFeedbackBanner
 import com.benza.smartrooms.ui.components.AuthFeedbackType
@@ -75,13 +79,21 @@ internal fun RoomQuizPlayerRouteScreen(
 ) {
     val uiState = viewModel.uiState.collectAsStateWithLifecycle()
 
+    LaunchedEffect(viewModel) {
+        viewModel.events.collect { event ->
+            when (event) {
+                RoomQuizPlayerEvent.ExitCompleted -> onBackClick()
+            }
+        }
+    }
+
     RoomQuizPlayerScreen(
         uiState = uiState.value,
-        onBackClick = onBackClick,
+        onExitClick = viewModel::finishCurrentAttemptAndExit,
         onPreviousClick = viewModel::goToPreviousQuestion,
         onNextClick = viewModel::goToNextQuestion,
+        onSubmitAnswerClick = viewModel::submitCurrentAnswer,
         onFinishClick = viewModel::finishQuiz,
-        onRetryClick = viewModel::retryQuiz,
         onOptionSelected = viewModel::selectOption,
         onFillInAnswerChanged = viewModel::updateFillInAnswer,
         onScrambleTilePlaced = viewModel::placeScrambleTile,
@@ -92,11 +104,11 @@ internal fun RoomQuizPlayerRouteScreen(
 @Composable
 internal fun RoomQuizPlayerScreen(
     uiState: RoomQuizPlayerUiState,
-    onBackClick: () -> Unit,
+    onExitClick: () -> Unit,
     onPreviousClick: () -> Unit,
     onNextClick: () -> Unit,
+    onSubmitAnswerClick: () -> Unit,
     onFinishClick: () -> Unit,
-    onRetryClick: () -> Unit,
     onOptionSelected: (String, Int) -> Unit,
     onFillInAnswerChanged: (String, String) -> Unit,
     onScrambleTilePlaced: (String, String, Int) -> Unit,
@@ -105,6 +117,10 @@ internal fun RoomQuizPlayerScreen(
     val quiz = uiState.quiz
     val currentQuestion = quiz?.questions?.getOrNull(uiState.currentQuestionIndex)
     val isCurrentQuestionLocked = currentQuestion?.id in uiState.lockedQuestionIds
+
+    BackHandler(enabled = !uiState.isSavingResult) {
+        onExitClick()
+    }
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -121,7 +137,8 @@ internal fun RoomQuizPlayerScreen(
                 QuizPlayerTopBar(
                     roomName = uiState.roomName,
                     title = quiz?.title ?: stringResource(R.string.room_quiz_player_loading_title),
-                    onBackClick = onBackClick,
+                    isSavingResult = uiState.isSavingResult,
+                    onExitClick = onExitClick,
                 )
             }
 
@@ -145,6 +162,7 @@ internal fun RoomQuizPlayerScreen(
                             quiz = quiz,
                             currentQuestionIndex = uiState.currentQuestionIndex,
                             score = uiState.score,
+                            maxScore = uiState.maxScore,
                             isQuizCompleted = uiState.isQuizCompleted,
                             currentQuestionTimeLimitSeconds = currentQuestion.timeLimitSeconds,
                             remainingTimeSeconds = uiState.remainingTimeSeconds,
@@ -160,6 +178,8 @@ internal fun RoomQuizPlayerScreen(
                                     isQuizCompleted = uiState.isQuizCompleted,
                                     isQuestionLocked = isCurrentQuestionLocked,
                                     isCorrect = currentQuestion.id in uiState.correctQuestionIds,
+                                    questionScore = uiState.questionResultsById[currentQuestion.id]?.score ?: 0,
+                                    questionMaxScore = RoomQuizScoring.maxScore(currentQuestion),
                                     onOptionSelected = { onOptionSelected(currentQuestion.id, it) },
                                 )
 
@@ -170,6 +190,8 @@ internal fun RoomQuizPlayerScreen(
                                     isQuizCompleted = uiState.isQuizCompleted,
                                     isQuestionLocked = isCurrentQuestionLocked,
                                     isCorrect = currentQuestion.id in uiState.correctQuestionIds,
+                                    questionScore = uiState.questionResultsById[currentQuestion.id]?.score ?: 0,
+                                    questionMaxScore = RoomQuizScoring.maxScore(currentQuestion),
                                     onValueChange = { onFillInAnswerChanged(currentQuestion.id, it) },
                                 )
 
@@ -182,6 +204,8 @@ internal fun RoomQuizPlayerScreen(
                                     isQuizCompleted = uiState.isQuizCompleted,
                                     isQuestionLocked = isCurrentQuestionLocked,
                                     isCorrect = currentQuestion.id in uiState.correctQuestionIds,
+                                    questionScore = uiState.questionResultsById[currentQuestion.id]?.score ?: 0,
+                                    questionMaxScore = RoomQuizScoring.maxScore(currentQuestion),
                                     onTilePlaced = { tileId, slotIndex ->
                                         onScrambleTilePlaced(currentQuestion.id, tileId, slotIndex)
                                     },
@@ -195,11 +219,12 @@ internal fun RoomQuizPlayerScreen(
                         QuizNavigationCard(
                             currentQuestionIndex = uiState.currentQuestionIndex,
                             questionCount = quiz.questionCount,
+                            isTimedQuestion = currentQuestion.timeLimitSeconds != null,
                             isQuizCompleted = uiState.isQuizCompleted,
                             onPreviousClick = onPreviousClick,
                             onNextClick = onNextClick,
+                            onSubmitAnswerClick = onSubmitAnswerClick,
                             onFinishClick = onFinishClick,
-                            onRetryClick = onRetryClick,
                         )
                     }
                 }
@@ -212,18 +237,29 @@ internal fun RoomQuizPlayerScreen(
 private fun QuizPlayerTopBar(
     roomName: String,
     title: String,
-    onBackClick: () -> Unit,
+    isSavingResult: Boolean,
+    onExitClick: () -> Unit,
 ) {
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        IconButton(onClick = onBackClick) {
-            Icon(
-                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                contentDescription = stringResource(R.string.action_back),
-            )
+        IconButton(
+            onClick = onExitClick,
+            enabled = !isSavingResult,
+        ) {
+            if (isSavingResult) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(22.dp),
+                    strokeWidth = 2.dp,
+                )
+            } else {
+                Icon(
+                    imageVector = Icons.Filled.Close,
+                    contentDescription = stringResource(R.string.action_exit_quiz_save_progress),
+                )
+            }
         }
         Column(modifier = Modifier.weight(1f)) {
             Text(
@@ -266,6 +302,7 @@ private fun QuizProgressCard(
     quiz: RoomQuiz,
     currentQuestionIndex: Int,
     score: Int,
+    maxScore: Int,
     isQuizCompleted: Boolean,
     currentQuestionTimeLimitSeconds: Int?,
     remainingTimeSeconds: Int?,
@@ -323,7 +360,7 @@ private fun QuizProgressCard(
                     modifier = Modifier.weight(1f),
                     value =
                         if (isQuizCompleted) {
-                            stringResource(R.string.room_quiz_player_score_value, score, quiz.questionCount)
+                            stringResource(R.string.room_quiz_player_score_value, score, maxScore)
                         } else {
                             quiz.questionCount.toString()
                         },
@@ -409,15 +446,23 @@ private fun MultipleChoiceQuestionCard(
     isQuizCompleted: Boolean,
     isQuestionLocked: Boolean,
     isCorrect: Boolean,
+    questionScore: Int,
+    questionMaxScore: Int,
     onOptionSelected: (Int) -> Unit,
 ) {
     QuestionCardShell(
         questionNumberLabel = stringResource(R.string.room_detail_type_multiple_choice),
         prompt = question.prompt,
         explanation = question.explanation,
+        userAnswer =
+            selectedOptionIndex
+                ?.let(question.options::getOrNull)
+                ?: stringResource(R.string.room_quiz_player_unanswered),
         isQuizCompleted = isQuizCompleted,
         isQuestionLocked = isQuestionLocked,
         isCorrect = isCorrect,
+        questionScore = questionScore,
+        questionMaxScore = questionMaxScore,
     ) {
         question.options.forEachIndexed { index, option ->
             val isSelected = selectedOptionIndex == index
@@ -457,15 +502,20 @@ private fun FillInBlankQuestionCard(
     isQuizCompleted: Boolean,
     isQuestionLocked: Boolean,
     isCorrect: Boolean,
+    questionScore: Int,
+    questionMaxScore: Int,
     onValueChange: (String) -> Unit,
 ) {
     QuestionCardShell(
         questionNumberLabel = stringResource(R.string.room_detail_type_fill_in_blank),
         prompt = question.prompt,
         explanation = question.explanation,
+        userAnswer = value.ifBlank { stringResource(R.string.room_quiz_player_unanswered) },
         isQuizCompleted = isQuizCompleted,
         isQuestionLocked = isQuestionLocked,
         isCorrect = isCorrect,
+        questionScore = questionScore,
+        questionMaxScore = questionMaxScore,
     ) {
         OutlinedTextField(
             value = value,
@@ -499,12 +549,19 @@ private fun WordScrambleQuestionCard(
     isQuizCompleted: Boolean,
     isQuestionLocked: Boolean,
     isCorrect: Boolean,
+    questionScore: Int,
+    questionMaxScore: Int,
     onTilePlaced: (String, Int) -> Unit,
     onSlotCleared: (Int) -> Unit,
 ) {
     val tiles = remember(question) { question.buildScrambleTiles() }
     val tilesById = remember(tiles) { tiles.associateBy(ScrambleTile::id) }
     val availableTiles = tiles.filter { tile -> tile.id !in answerSlots.filterNotNull() }
+    val userAnswer =
+        answerSlots
+            .mapNotNull(tilesById::get)
+            .joinToString(separator = "") { it.letter }
+            .ifBlank { stringResource(R.string.room_quiz_player_unanswered) }
     val slotBounds = remember { mutableStateMapOf<Int, Rect>() }
     var bankBounds by remember { mutableStateOf<Rect?>(null) }
     var containerBounds by remember { mutableStateOf<Rect?>(null) }
@@ -525,9 +582,12 @@ private fun WordScrambleQuestionCard(
             questionNumberLabel = stringResource(R.string.room_detail_type_word_scramble),
             prompt = question.prompt,
             explanation = question.explanation,
+            userAnswer = userAnswer,
             isQuizCompleted = isQuizCompleted,
             isQuestionLocked = isQuestionLocked,
             isCorrect = isCorrect,
+            questionScore = questionScore,
+            questionMaxScore = questionMaxScore,
         ) {
             Text(
                 text = stringResource(R.string.room_quiz_player_scramble_hint),
@@ -803,11 +863,16 @@ private fun QuestionCardShell(
     questionNumberLabel: String,
     prompt: String,
     explanation: String,
+    userAnswer: String,
     isQuizCompleted: Boolean,
     isQuestionLocked: Boolean,
     isCorrect: Boolean,
+    questionScore: Int,
+    questionMaxScore: Int,
     content: @Composable () -> Unit,
 ) {
+    var isExplanationExpanded by remember(prompt) { mutableStateOf(false) }
+
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = MaterialTheme.shapes.extraLarge,
@@ -871,9 +936,35 @@ private fun QuestionCardShell(
                             fontWeight = FontWeight.SemiBold,
                         )
                         Text(
-                            text = stringResource(R.string.room_quiz_player_explanation, explanation),
+                            text =
+                                stringResource(
+                                    R.string.room_quiz_player_question_score_value,
+                                    questionScore,
+                                    questionMaxScore,
+                                ),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Text(
+                            text = stringResource(R.string.room_quiz_player_your_answer, userAnswer),
                             style = MaterialTheme.typography.bodyMedium,
                         )
+                        if (!isCorrect) {
+                            IconButton(
+                                onClick = { isExplanationExpanded = !isExplanationExpanded },
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Outlined.Info,
+                                    contentDescription = stringResource(R.string.room_quiz_player_show_explanation),
+                                )
+                            }
+                            if (isExplanationExpanded) {
+                                Text(
+                                    text = stringResource(R.string.room_quiz_player_explanation, explanation),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                )
+                            }
+                        }
                     }
                 }
             }
@@ -887,11 +978,12 @@ private const val SCRAMBLE_ROW_SIZE = 6
 private fun QuizNavigationCard(
     currentQuestionIndex: Int,
     questionCount: Int,
+    isTimedQuestion: Boolean,
     isQuizCompleted: Boolean,
     onPreviousClick: () -> Unit,
     onNextClick: () -> Unit,
+    onSubmitAnswerClick: () -> Unit,
     onFinishClick: () -> Unit,
-    onRetryClick: () -> Unit,
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -905,35 +997,36 @@ private fun QuizNavigationCard(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                OutlinedButton(
-                    onClick = onPreviousClick,
-                    enabled = currentQuestionIndex > 0,
-                    modifier = Modifier.weight(1f),
-                ) {
-                    Text(stringResource(R.string.action_previous))
-                }
-
-                if (currentQuestionIndex < questionCount - 1) {
+                if (!isQuizCompleted && isTimedQuestion) {
                     Button(
-                        onClick = onNextClick,
-                        modifier = Modifier.weight(1f),
+                        onClick = onSubmitAnswerClick,
+                        modifier = Modifier.fillMaxWidth(),
                     ) {
-                        Text(stringResource(R.string.action_next))
+                        Text(stringResource(R.string.action_submit_answer))
                     }
                 } else {
-                    Button(
-                        onClick = if (isQuizCompleted) onRetryClick else onFinishClick,
+                    OutlinedButton(
+                        onClick = onPreviousClick,
+                        enabled = currentQuestionIndex > 0,
                         modifier = Modifier.weight(1f),
                     ) {
-                        Text(
-                            stringResource(
-                                if (isQuizCompleted) {
-                                    R.string.action_retry_quiz
-                                } else {
-                                    R.string.action_finish_quiz
-                                },
-                            ),
-                        )
+                        Text(stringResource(R.string.action_previous))
+                    }
+
+                    if (currentQuestionIndex < questionCount - 1) {
+                        Button(
+                            onClick = onNextClick,
+                            modifier = Modifier.weight(1f),
+                        ) {
+                            Text(stringResource(R.string.action_next))
+                        }
+                    } else if (!isQuizCompleted) {
+                        Button(
+                            onClick = onFinishClick,
+                            modifier = Modifier.weight(1f),
+                        ) {
+                            Text(stringResource(R.string.action_finish_quiz))
+                        }
                     }
                 }
             }

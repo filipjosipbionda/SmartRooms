@@ -61,10 +61,10 @@ internal class FirestoreUserProfileRepository(
             )
         }
 
-    override suspend fun selectStudentRole(uid: String): UserProfileOperationResult<Unit> =
+    override suspend fun selectStudentRole(user: AuthUser): UserProfileOperationResult<Unit> =
         withContext(Dispatchers.IO) {
             runCatching {
-                userProfileDataSource.selectStudentRole(uid)
+                userProfileDataSource.selectStudentRole(user)
             }.fold(
                 onSuccess = { UserProfileOperationResult.Success(Unit) },
                 onFailure = { UserProfileOperationResult.Error(it.toUserProfileErrorRes()) },

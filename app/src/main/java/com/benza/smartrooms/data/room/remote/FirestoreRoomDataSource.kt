@@ -11,6 +11,9 @@ import com.benza.smartrooms.data.room.model.RoomInvitation
 import com.benza.smartrooms.data.room.model.RoomInvitationAccess
 import com.benza.smartrooms.data.room.model.RoomQuiz
 import com.benza.smartrooms.data.room.model.RoomQuizQuestion
+import com.benza.smartrooms.data.room.model.RoomQuizQuestionResult
+import com.benza.smartrooms.data.room.model.RoomQuizResult
+import com.benza.smartrooms.data.room.model.RoomQuizScoring
 import com.benza.smartrooms.data.room.model.RoomQuizStatus
 import com.benza.smartrooms.data.room.model.RoomQuizSummary
 import com.benza.smartrooms.data.room.model.UpdateAnnouncementRequest
@@ -234,6 +237,35 @@ internal class FirestoreRoomDataSource(
             awaitClose { registration.remove() }
         }
 
+    internal fun observeQuizResults(
+        userId: String,
+        roomId: String,
+    ): Flow<List<RoomQuizResult>> =
+        callbackFlow {
+            val registration =
+                firestore
+                    .collection(USERS_COLLECTION)
+                    .document(userId)
+                    .collection(QUIZ_RESULTS_COLLECTION)
+                    .addSnapshotListener(FIRESTORE_CALLBACK_EXECUTOR) { snapshot, error ->
+                        if (error != null) {
+                            close(error)
+                            return@addSnapshotListener
+                        }
+
+                        val results =
+                            snapshot
+                                ?.documents
+                                .orEmpty()
+                                .mapNotNull { it.toQuizResult(userId) }
+                                .filter { it.roomId == roomId }
+
+                        trySend(results)
+                    }
+
+            awaitClose { registration.remove() }
+        }
+
     /**
      * Observes announcements inside the supplied room.
      */
@@ -275,6 +307,16 @@ internal class FirestoreRoomDataSource(
             .get()
             .await()
             .toAnnouncement()
+
+    internal suspend fun saveQuizResult(result: RoomQuizResult) {
+        firestore
+            .collection(USERS_COLLECTION)
+            .document(result.userId)
+            .collection(QUIZ_RESULTS_COLLECTION)
+            .document(quizResultDocumentId(result.roomId, result.quizId))
+            .set(result.toFirestoreMap())
+            .await()
+    }
 
     /**
      * Creates a new room document in Firestore.
@@ -492,7 +534,9 @@ private fun DocumentSnapshot.toQuizSummary(): RoomQuizSummary? {
     val quizKind = getString(QUIZ_KIND_FIELD).toQuizKind()
     val topic = getString(QUIZ_TOPIC_FIELD).orEmpty().ifBlank { DEFAULT_TOPIC }
     val questionCount = (getLong(QUIZ_QUESTION_COUNT_FIELD) ?: 0L).toInt()
-    val hasGeneratedContent = getQuestionList(QUESTIONS_FIELD).isNotEmpty()
+    val questions = getQuestionList(QUESTIONS_FIELD)
+    val timedQuestionCount = questions.count { it.getIntValue(QUIZ_QUESTION_TIME_LIMIT_SECONDS_FIELD) != null }
+    val hasGeneratedContent = questions.isNotEmpty()
     val status = getString(QUIZ_STATUS_FIELD).toQuizStatus()
 
     return RoomQuizSummary(
@@ -505,6 +549,12 @@ private fun DocumentSnapshot.toQuizSummary(): RoomQuizSummary? {
         cefrLevel = getString(CEFR_LEVEL_FIELD).orEmpty(),
         questionType = getString(QUESTION_TYPE_FIELD).toQuestionType(),
         questionCount = questionCount,
+        hasTimer = timedQuestionCount > 0,
+        maxScore =
+            RoomQuizScoring.maxScore(
+                questionCount = if (questions.isEmpty()) questionCount else questions.size,
+                timedQuestionCount = timedQuestionCount,
+            ),
         status = status.normalizeQuizStatus(hasGeneratedContent),
         failureReason = getString(QUIZ_FAILURE_REASON_FIELD)?.trim()?.takeIf(String::isNotBlank),
         createdAtEpochMillis = (
@@ -680,6 +730,27 @@ private fun DocumentSnapshot.toRoom(): Room? {
     )
 }
 
+private fun DocumentSnapshot.toQuizResult(userId: String): RoomQuizResult? {
+    if (!exists()) return null
+    val roomId = getString(ROOM_ID_FIELD) ?: return null
+    val quizId = getString(QUIZ_ID_FIELD) ?: return null
+
+    val questionCount = (getLong(QUIZ_QUESTION_COUNT_FIELD) ?: 0L).toInt()
+
+    return RoomQuizResult(
+        roomId = roomId,
+        quizId = quizId,
+        userId = userId,
+        scoringVersion = (getLong(QUIZ_RESULT_SCORING_VERSION_FIELD) ?: LEGACY_SCORING_VERSION.toLong()).toInt(),
+        answeredQuestionCount = (getLong(QUIZ_RESULT_ANSWERED_QUESTION_COUNT_FIELD) ?: 0L).toInt(),
+        questionCount = questionCount,
+        score = (getLong(QUIZ_RESULT_SCORE_FIELD) ?: 0L).toInt(),
+        maxScore = (getLong(QUIZ_RESULT_MAX_SCORE_FIELD) ?: (questionCount * LEGACY_QUESTION_POINTS).toLong()).toInt(),
+        questionResults = getQuizQuestionResults(QUIZ_RESULT_QUESTION_RESULTS_FIELD),
+        completedAtEpochMillis = getLong(QUIZ_RESULT_COMPLETED_AT_EPOCH_FIELD) ?: 0L,
+    )
+}
+
 private fun DocumentSnapshot.getStringList(field: String): List<String> =
     get(field)
         .let { it as? List<*> }
@@ -691,6 +762,26 @@ private fun DocumentSnapshot.getQuestionList(field: String): List<Map<*, *>> =
         .let { it as? List<*> }
         .orEmpty()
         .filterIsInstance<Map<*, *>>()
+
+private fun DocumentSnapshot.getQuizQuestionResults(field: String): List<RoomQuizQuestionResult> =
+    get(field)
+        .let { it as? List<*> }
+        .orEmpty()
+        .filterIsInstance<Map<*, *>>()
+        .mapNotNull(Map<*, *>::toQuizQuestionResult)
+
+private fun Map<*, *>.toQuizQuestionResult(): RoomQuizQuestionResult? {
+    val questionId = getStringValue(QUIZ_RESULT_QUESTION_ID_FIELD) ?: return null
+    return RoomQuizQuestionResult(
+        questionId = questionId,
+        isAnswered = getBooleanValue(QUIZ_RESULT_QUESTION_ANSWERED_FIELD) ?: false,
+        isCorrect = getBooleanValue(QUIZ_RESULT_QUESTION_CORRECT_FIELD) ?: false,
+        score = getIntValue(QUIZ_RESULT_QUESTION_SCORE_FIELD) ?: 0,
+        maxScore = getIntValue(QUIZ_RESULT_QUESTION_MAX_SCORE_FIELD) ?: LEGACY_QUESTION_POINTS,
+        timeLimitSeconds = getIntValue(QUIZ_QUESTION_TIME_LIMIT_SECONDS_FIELD),
+        remainingTimeSeconds = getIntValue(QUIZ_RESULT_QUESTION_REMAINING_TIME_SECONDS_FIELD),
+    )
+}
 
 private fun Map<*, *>.toQuizQuestion(
     fallbackType: QuestionType,
@@ -757,6 +848,8 @@ private fun Map<*, *>.getStringListValue(field: String): List<String> =
 
 private fun Map<*, *>.getIntValue(field: String): Int? = (this[field] as? Number)?.toInt()
 
+private fun Map<*, *>.getBooleanValue(field: String): Boolean? = this[field] as? Boolean
+
 private fun RoomQuizQuestion.toFirestoreMap(): Map<String, Any> =
     when (this) {
         is RoomQuizQuestion.MultipleChoice ->
@@ -792,6 +885,37 @@ private fun RoomQuizQuestion.toFirestoreMap(): Map<String, Any> =
 private fun Map<String, Any>.withOptionalQuestionTimeLimit(timeLimitSeconds: Int?): Map<String, Any> =
     if (timeLimitSeconds == null) this else this + (QUIZ_QUESTION_TIME_LIMIT_SECONDS_FIELD to timeLimitSeconds)
 
+private fun RoomQuizResult.toFirestoreMap(): Map<String, Any> =
+    mapOf(
+        ROOM_ID_FIELD to roomId,
+        QUIZ_ID_FIELD to quizId,
+        QUIZ_RESULT_SCORING_VERSION_FIELD to scoringVersion,
+        QUIZ_RESULT_ANSWERED_QUESTION_COUNT_FIELD to answeredQuestionCount,
+        QUIZ_QUESTION_COUNT_FIELD to questionCount,
+        QUIZ_RESULT_SCORE_FIELD to score,
+        QUIZ_RESULT_MAX_SCORE_FIELD to maxScore,
+        QUIZ_RESULT_QUESTION_RESULTS_FIELD to questionResults.map(RoomQuizQuestionResult::toFirestoreMap),
+        QUIZ_RESULT_COMPLETED_AT_EPOCH_FIELD to completedAtEpochMillis,
+        UPDATED_AT_FIELD to completedAtEpochMillis,
+    )
+
+private fun RoomQuizQuestionResult.toFirestoreMap(): Map<String, Any> =
+    mapOf(
+        QUIZ_RESULT_QUESTION_ID_FIELD to questionId,
+        QUIZ_RESULT_QUESTION_ANSWERED_FIELD to isAnswered,
+        QUIZ_RESULT_QUESTION_CORRECT_FIELD to isCorrect,
+        QUIZ_RESULT_QUESTION_SCORE_FIELD to score,
+        QUIZ_RESULT_QUESTION_MAX_SCORE_FIELD to maxScore,
+        QUIZ_QUESTION_TIME_LIMIT_SECONDS_FIELD to timeLimitSeconds,
+        QUIZ_RESULT_QUESTION_REMAINING_TIME_SECONDS_FIELD to remainingTimeSeconds,
+    ).filterValues { it != null }
+        .mapValues { it.value as Any }
+
+private fun quizResultDocumentId(
+    roomId: String,
+    quizId: String,
+): String = "${roomId}_$quizId"
+
 private suspend fun <T> Task<T>.await(): T =
     suspendCancellableCoroutine { continuation ->
         addOnCompleteListener(FIREBASE_TASK_EXECUTOR) { task ->
@@ -809,10 +933,12 @@ private val FIREBASE_TASK_EXECUTOR = Dispatchers.IO.asExecutor()
 private const val USERS_COLLECTION = "users"
 private const val ROOMS_COLLECTION = "rooms"
 private const val ROOM_INVITATIONS_COLLECTION = "roomInvitations"
+private const val QUIZ_RESULTS_COLLECTION = "quizResults"
 private const val QUIZZES_COLLECTION = "quizzes"
 private const val ANNOUNCEMENTS_COLLECTION = "announcements"
 private const val ID_FIELD = "id"
 private const val ROOM_ID_FIELD = "roomId"
+private const val QUIZ_ID_FIELD = "quizId"
 private const val ROOM_NAME_FIELD = "roomName"
 private const val NAME_FIELD = "name"
 private const val TOPIC_FIELD = "topic"
@@ -856,6 +982,20 @@ private const val QUIZ_QUESTION_SHUFFLED_LETTERS_FIELD = "shuffledLetters"
 private const val QUIZ_QUESTION_EXPLANATION_FIELD = "explanation"
 private const val QUIZ_QUESTION_TIME_LIMIT_SECONDS_FIELD = "timeLimitSeconds"
 private const val QUIZ_QUESTION_COUNT_FIELD = "questionCount"
+private const val QUIZ_RESULT_SCORING_VERSION_FIELD = "scoringVersion"
+private const val QUIZ_RESULT_ANSWERED_QUESTION_COUNT_FIELD = "answeredQuestionCount"
+private const val QUIZ_RESULT_SCORE_FIELD = "score"
+private const val QUIZ_RESULT_MAX_SCORE_FIELD = "maxScore"
+private const val QUIZ_RESULT_QUESTION_RESULTS_FIELD = "questionResults"
+private const val QUIZ_RESULT_QUESTION_ID_FIELD = "questionId"
+private const val QUIZ_RESULT_QUESTION_ANSWERED_FIELD = "isAnswered"
+private const val QUIZ_RESULT_QUESTION_CORRECT_FIELD = "isCorrect"
+private const val QUIZ_RESULT_QUESTION_SCORE_FIELD = "score"
+private const val QUIZ_RESULT_QUESTION_MAX_SCORE_FIELD = "maxScore"
+private const val QUIZ_RESULT_QUESTION_REMAINING_TIME_SECONDS_FIELD = "remainingTimeSeconds"
+private const val QUIZ_RESULT_COMPLETED_AT_EPOCH_FIELD = "completedAtEpochMillis"
+private const val LEGACY_SCORING_VERSION = 0
+private const val LEGACY_QUESTION_POINTS = 100
 private const val ANNOUNCEMENT_TITLE_FIELD = "title"
 private const val ANNOUNCEMENT_MESSAGE_FIELD = "message"
 private const val ANNOUNCEMENT_AUTHOR_ID_FIELD = "authorId"

@@ -6,6 +6,8 @@ import androidx.lifecycle.viewModelScope
 import com.benza.smartrooms.R
 import com.benza.smartrooms.data.auth.model.AuthOperationResult
 import com.benza.smartrooms.data.auth.repository.AuthRepository
+import com.benza.smartrooms.data.userprofile.model.UserProfileOperationResult
+import com.benza.smartrooms.data.userprofile.repository.UserProfileRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -36,6 +38,7 @@ internal data class RegisterUiState(
  */
 internal class RegisterViewModel(
     private val authRepository: AuthRepository,
+    private val userProfileRepository: UserProfileRepository,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(RegisterUiState())
     val uiState: StateFlow<RegisterUiState> = _uiState.asStateFlow()
@@ -176,12 +179,30 @@ internal class RegisterViewModel(
                     )
             ) {
                 is AuthOperationResult.Success -> {
-                    _uiState.update {
-                        it.copy(
-                            isLoading = false,
-                            isAuthenticated = true,
-                            generalMessageRes = null,
-                        )
+                    when (
+                        val profileResult =
+                            userProfileRepository.ensureProfile(
+                                result.data.copy(displayName = fullName),
+                            )
+                    ) {
+                        is UserProfileOperationResult.Success -> {
+                            _uiState.update {
+                                it.copy(
+                                    isLoading = false,
+                                    isAuthenticated = true,
+                                    generalMessageRes = null,
+                                )
+                            }
+                        }
+
+                        is UserProfileOperationResult.Error -> {
+                            _uiState.update {
+                                it.copy(
+                                    isLoading = false,
+                                    generalMessageRes = profileResult.messageRes,
+                                )
+                            }
+                        }
                     }
                 }
 

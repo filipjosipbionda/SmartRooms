@@ -8,6 +8,7 @@ import com.benza.smartrooms.data.auth.repository.AuthRepository
 import com.benza.smartrooms.data.room.model.CreateRoomRequest
 import com.benza.smartrooms.data.room.model.RoomOperationResult
 import com.benza.smartrooms.data.room.repository.RoomRepository
+import com.benza.smartrooms.util.orPrettyEmailLocalPart
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -150,4 +151,4 @@ internal class CreateRoomViewModel(
 private fun AuthUser.displayNameOrEmailName(): String =
     displayName
         ?.takeIf(String::isNotBlank)
-        ?: email?.substringBefore("@").orEmpty()
+        ?: email.orPrettyEmailLocalPart(email)

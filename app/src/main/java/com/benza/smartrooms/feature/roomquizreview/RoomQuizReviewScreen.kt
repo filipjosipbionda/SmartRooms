@@ -32,7 +32,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -62,6 +61,14 @@ internal fun RoomQuizReviewRouteScreen(
         ),
 ) {
     val uiState = viewModel.uiState.collectAsStateWithLifecycle()
+
+    LaunchedEffect(viewModel) {
+        viewModel.events.collect { event ->
+            when (event) {
+                RoomQuizReviewEvent.QuizPublished -> onBackClick()
+            }
+        }
+    }
 
     RoomQuizReviewScreen(
         uiState = uiState.value,
@@ -97,13 +104,13 @@ internal fun RoomQuizReviewScreen(
     onInfoMessageShown: () -> Unit,
 ) {
     val snackbarHostState = remember { SnackbarHostState() }
-    val context = LocalContext.current
     val quiz = uiState.quiz
     val question = quiz?.questions?.getOrNull(uiState.currentQuestionIndex)
+    val infoMessage = uiState.infoMessageRes?.let { stringResource(it) }
 
-    LaunchedEffect(uiState.infoMessageRes) {
-        val messageRes = uiState.infoMessageRes ?: return@LaunchedEffect
-        snackbarHostState.showSnackbar(context.getString(messageRes))
+    LaunchedEffect(infoMessage) {
+        val message = infoMessage ?: return@LaunchedEffect
+        snackbarHostState.showSnackbar(message)
         onInfoMessageShown()
     }
 

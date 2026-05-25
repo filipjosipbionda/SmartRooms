@@ -71,8 +71,39 @@ internal fun CreatePostRouteScreen(
     onPostCompleted: () -> Unit,
     viewModel: CreatePostViewModel =
         koinViewModel(
-            parameters = { parametersOf(roomId, roomName, announcementId) },
+            parameters = { parametersOf(roomId, roomName, announcementId, false) },
         ),
+) {
+    CreatePostRouteContent(
+        viewModel = viewModel,
+        onBackClick = onBackClick,
+        onPostCompleted = onPostCompleted,
+    )
+}
+
+@Composable
+internal fun PostDetailRouteScreen(
+    roomId: String,
+    roomName: String,
+    announcementId: String,
+    onBackClick: () -> Unit,
+    viewModel: CreatePostViewModel =
+        koinViewModel(
+            parameters = { parametersOf(roomId, roomName, announcementId, true) },
+        ),
+) {
+    CreatePostRouteContent(
+        viewModel = viewModel,
+        onBackClick = onBackClick,
+        onPostCompleted = onBackClick,
+    )
+}
+
+@Composable
+private fun CreatePostRouteContent(
+    viewModel: CreatePostViewModel,
+    onBackClick: () -> Unit,
+    onPostCompleted: () -> Unit,
 ) {
     val uiState = viewModel.uiState.collectAsStateWithLifecycle()
     val context = LocalContext.current
@@ -152,20 +183,24 @@ internal fun CreatePostScreen(
             ?: uiState.errorMessageRes?.let { stringResource(it) }
     val isWorking = uiState.isSubmittingPost || uiState.isDeletingPost
     val isInputEnabled = uiState.canEdit && !uiState.isLoadingPost && !isWorking
+    val isViewMode = uiState.mode == CreatePostMode.VIEW
     val screenTitleRes =
         when (uiState.mode) {
             CreatePostMode.CREATE -> R.string.create_post_screen_title
             CreatePostMode.EDIT -> R.string.edit_post_screen_title
+            CreatePostMode.VIEW -> R.string.post_detail_screen_title
         }
     val screenSubtitleRes =
         when (uiState.mode) {
             CreatePostMode.CREATE -> R.string.create_post_screen_subtitle
             CreatePostMode.EDIT -> R.string.edit_post_screen_subtitle
+            CreatePostMode.VIEW -> R.string.post_detail_screen_subtitle
         }
     val submitLabelRes =
         when (uiState.mode) {
             CreatePostMode.CREATE -> R.string.action_publish_post
             CreatePostMode.EDIT -> R.string.action_save_post
+            CreatePostMode.VIEW -> R.string.action_save_post
         }
 
     Scaffold(containerColor = MaterialTheme.colorScheme.background) { paddingValues ->
@@ -234,31 +269,45 @@ internal fun CreatePostScreen(
                                     style = MaterialTheme.typography.bodyMedium,
                                 )
                             }
-                        } else {
+                        } else if (!isViewMode) {
                             Text(
                                 text = stringResource(screenSubtitleRes),
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
-                        OutlinedTextField(
-                            value = uiState.titleInput,
-                            onValueChange = onTitleChanged,
-                            modifier = Modifier.fillMaxWidth(),
-                            label = { Text(stringResource(R.string.label_post_title)) },
-                            isError = uiState.titleErrorRes != null,
-                            singleLine = true,
-                            enabled = isInputEnabled,
-                        )
-                        OutlinedTextField(
-                            value = uiState.messageInput,
-                            onValueChange = onMessageChanged,
-                            modifier = Modifier.fillMaxWidth(),
-                            label = { Text(stringResource(R.string.label_post_message)) },
-                            isError = uiState.messageErrorRes != null,
-                            minLines = 6,
-                            enabled = isInputEnabled,
-                        )
+                        if (isViewMode) {
+                            Text(
+                                text = uiState.titleInput,
+                                style = MaterialTheme.typography.titleLarge,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onSurface,
+                            )
+                            Text(
+                                text = uiState.messageInput,
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = MaterialTheme.colorScheme.onSurface,
+                            )
+                        } else {
+                            OutlinedTextField(
+                                value = uiState.titleInput,
+                                onValueChange = onTitleChanged,
+                                modifier = Modifier.fillMaxWidth(),
+                                label = { Text(stringResource(R.string.label_post_title)) },
+                                isError = uiState.titleErrorRes != null,
+                                singleLine = true,
+                                enabled = isInputEnabled,
+                            )
+                            OutlinedTextField(
+                                value = uiState.messageInput,
+                                onValueChange = onMessageChanged,
+                                modifier = Modifier.fillMaxWidth(),
+                                label = { Text(stringResource(R.string.label_post_message)) },
+                                isError = uiState.messageErrorRes != null,
+                                minLines = 6,
+                                enabled = isInputEnabled,
+                            )
+                        }
                     }
                 }
             }
@@ -276,24 +325,28 @@ internal fun CreatePostScreen(
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.SemiBold,
                         )
-                        Text(
-                            text = stringResource(R.string.create_post_attachments_subtitle),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                        OutlinedButton(
-                            onClick = { isPickerSheetOpen = true },
-                            enabled = isInputEnabled,
-                        ) {
-                            Icon(
-                                imageVector = Icons.Outlined.AttachFile,
-                                contentDescription = null,
-                                modifier = Modifier.size(18.dp),
-                            )
+                        if (!isViewMode) {
                             Text(
-                                text = stringResource(R.string.action_add_files),
-                                modifier = Modifier.padding(start = 8.dp),
+                                text = stringResource(R.string.create_post_attachments_subtitle),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
+                        }
+                        if (!isViewMode) {
+                            OutlinedButton(
+                                onClick = { isPickerSheetOpen = true },
+                                enabled = isInputEnabled,
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Outlined.AttachFile,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(18.dp),
+                                )
+                                Text(
+                                    text = stringResource(R.string.action_add_files),
+                                    modifier = Modifier.padding(start = 8.dp),
+                                )
+                            }
                         }
                         if (uiState.attachments.isEmpty()) {
                             Text(
@@ -316,7 +369,7 @@ internal fun CreatePostScreen(
                                         ) {
                                             AttachmentPreview(
                                                 modifier = Modifier.size(56.dp),
-                                                model = attachment.uriString,
+                                                model = attachment.uriString ?: attachment.downloadUrl,
                                                 mimeType = attachment.mimeType,
                                                 fileName = attachment.name,
                                             )
@@ -342,17 +395,19 @@ internal fun CreatePostScreen(
                                                     maxLines = 1,
                                                 )
                                             }
-                                            IconButton(
-                                                onClick = { onRemoveAttachmentClick(attachment.id) },
-                                                enabled = isInputEnabled,
-                                            ) {
-                                                Icon(
-                                                    imageVector = Icons.Filled.Close,
-                                                    contentDescription =
-                                                        stringResource(
-                                                            R.string.create_post_attachment_remove,
-                                                        ),
-                                                )
+                                            if (!isViewMode) {
+                                                IconButton(
+                                                    onClick = { onRemoveAttachmentClick(attachment.id) },
+                                                    enabled = isInputEnabled,
+                                                ) {
+                                                    Icon(
+                                                        imageVector = Icons.Filled.Close,
+                                                        contentDescription =
+                                                            stringResource(
+                                                                R.string.create_post_attachment_remove,
+                                                            ),
+                                                    )
+                                                }
                                             }
                                         }
                                     }
@@ -370,23 +425,25 @@ internal fun CreatePostScreen(
                     )
                 }
             }
-            item {
-                Button(
-                    onClick = onSubmitClick,
-                    enabled = isInputEnabled,
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    if (uiState.isSubmittingPost) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(18.dp),
-                            strokeWidth = 2.dp,
-                        )
-                        Text(
-                            text = stringResource(submitLabelRes),
-                            modifier = Modifier.padding(start = 10.dp),
-                        )
-                    } else {
-                        Text(stringResource(submitLabelRes))
+            if (!isViewMode) {
+                item {
+                    Button(
+                        onClick = onSubmitClick,
+                        enabled = isInputEnabled,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        if (uiState.isSubmittingPost) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(18.dp),
+                                strokeWidth = 2.dp,
+                            )
+                            Text(
+                                text = stringResource(submitLabelRes),
+                                modifier = Modifier.padding(start = 10.dp),
+                            )
+                        } else {
+                            Text(stringResource(submitLabelRes))
+                        }
                     }
                 }
             }

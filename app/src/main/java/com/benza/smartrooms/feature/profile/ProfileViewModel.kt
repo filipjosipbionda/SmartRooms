@@ -11,6 +11,7 @@ import com.benza.smartrooms.data.userprofile.model.TeacherApprovalStatus
 import com.benza.smartrooms.data.userprofile.model.UserProfileOperationResult
 import com.benza.smartrooms.data.userprofile.model.UserRole
 import com.benza.smartrooms.data.userprofile.repository.UserProfileRepository
+import com.benza.smartrooms.util.orPrettyEmailLocalPart
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -165,7 +166,7 @@ private fun AuthUser?.displayNameOrFallback(): String =
     this
         ?.displayName
         ?.takeIf(String::isNotBlank)
-        ?: this?.email?.substringBefore("@").orEmpty()
+        ?: this?.email.orPrettyEmailLocalPart(this?.email)
 
 private fun AuthUser?.toInitials(): String = this?.displayNameOrFallback().orEmpty().toInitials()
 

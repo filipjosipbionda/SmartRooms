@@ -7,8 +7,12 @@ import com.benza.smartrooms.data.room.model.RoomOperationResult
 import com.benza.smartrooms.data.room.model.RoomQuiz
 import com.benza.smartrooms.data.room.model.RoomQuizQuestion
 import com.benza.smartrooms.data.room.repository.RoomRepository
+import kotlinx.coroutines.channels.BufferOverflow
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -32,6 +36,10 @@ internal data class RoomQuizReviewUiState(
     val errorMessageRes: Int? = null,
 )
 
+internal sealed interface RoomQuizReviewEvent {
+    data object QuizPublished : RoomQuizReviewEvent
+}
+
 internal class RoomQuizReviewViewModel(
     roomId: String,
     roomName: String,
@@ -47,6 +55,13 @@ internal class RoomQuizReviewViewModel(
             ),
         )
     val uiState: StateFlow<RoomQuizReviewUiState> = _uiState.asStateFlow()
+
+    private val _events =
+        MutableSharedFlow<RoomQuizReviewEvent>(
+            extraBufferCapacity = 1,
+            onBufferOverflow = BufferOverflow.DROP_OLDEST,
+        )
+    val events: SharedFlow<RoomQuizReviewEvent> = _events.asSharedFlow()
 
     init {
         observeQuiz()
@@ -184,6 +199,7 @@ internal class RoomQuizReviewViewModel(
                             infoMessageRes = R.string.room_quiz_review_published,
                         )
                     }
+                    _events.tryEmit(RoomQuizReviewEvent.QuizPublished)
                 }
 
                 is RoomOperationResult.Error -> {

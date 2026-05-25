@@ -13,6 +13,12 @@ internal data class RoomQuizSummary(
     val cefrLevel: String,
     val questionType: QuestionType,
     val questionCount: Int,
+    val hasTimer: Boolean = false,
+    val maxScore: Int =
+        RoomQuizScoring.maxScore(
+            questionCount = questionCount,
+            timedQuestionCount = if (hasTimer) questionCount else 0,
+        ),
     val status: RoomQuizStatus,
     val failureReason: String? = null,
     val createdAtEpochMillis: Long,
