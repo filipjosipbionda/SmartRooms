@@ -443,20 +443,16 @@ internal class RoomQuizPlayerViewModel(
 
     private fun handleQuestionTimeout(questionId: String) {
         val state = _uiState.value
-        val currentQuestion = state.currentQuestion()
-        if (state.isQuizCompleted || currentQuestion?.id != questionId) return
+        val currentQuestion = state.currentQuestion() ?: return
+        if (state.isQuizCompleted || currentQuestion.id != questionId) return
 
         _uiState.update {
             it.copy(
                 lockedQuestionIds = it.lockedQuestionIds + questionId,
                 timedOutQuestionIds = it.timedOutQuestionIds + questionId,
                 questionResultsById =
-                    currentQuestion
-                        ?.let { question ->
-                            it.questionResultsById +
-                                (questionId to it.buildQuestionResult(question, isTimedOut = true))
-                        }
-                        ?: it.questionResultsById,
+                    it.questionResultsById +
+                        (questionId to it.buildQuestionResult(currentQuestion, isTimedOut = true)),
                 remainingTimeSeconds = 0,
             )
         }

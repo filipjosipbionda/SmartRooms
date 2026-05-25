@@ -63,6 +63,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -463,7 +464,12 @@ private fun QuizSelectionOverlay(
                     )
                 }
                 Text(
-                    text = stringResource(R.string.room_quizzes_selection_count, selectedCount),
+                    text =
+                        pluralStringResource(
+                            R.plurals.room_quizzes_selection_count,
+                            selectedCount,
+                            selectedCount,
+                        ),
                     modifier = Modifier.weight(1f),
                     style = MaterialTheme.typography.labelLarge,
                     fontWeight = FontWeight.SemiBold,
@@ -1114,13 +1120,15 @@ private fun DeleteQuizDialog(
                     pendingDeletion.quizTitle.orEmpty(),
                 )
             QuizDeletionMode.SELECTED ->
-                stringResource(
-                    R.string.delete_selected_quizzes_dialog_message,
+                pluralStringResource(
+                    R.plurals.delete_selected_quizzes_dialog_message,
+                    pendingDeletion.quizIds.size,
                     pendingDeletion.quizIds.size,
                 )
             QuizDeletionMode.ALL ->
-                stringResource(
-                    R.string.delete_all_quizzes_dialog_message,
+                pluralStringResource(
+                    R.plurals.delete_all_quizzes_dialog_message,
+                    pendingDeletion.quizIds.size,
                     pendingDeletion.quizIds.size,
                 )
         }

@@ -72,6 +72,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -654,8 +655,9 @@ private fun AnnouncementCard(
                     ) {
                         Text(
                             text =
-                                stringResource(
-                                    R.string.room_detail_more_attachments,
+                                pluralStringResource(
+                                    R.plurals.room_detail_more_attachments,
+                                    hiddenAttachmentCount,
                                     hiddenAttachmentCount,
                                 ),
                             modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
@@ -767,8 +769,9 @@ private fun QuizCard(
                     FeedMetaCard(
                         modifier = Modifier.weight(1f),
                         value =
-                            stringResource(
-                                R.string.room_quiz_result_progress_value,
+                            pluralStringResource(
+                                R.plurals.room_quiz_result_progress_value,
+                                result.answeredQuestionCount,
                                 result.answeredQuestionCount,
                                 result.questionCount,
                             ),
