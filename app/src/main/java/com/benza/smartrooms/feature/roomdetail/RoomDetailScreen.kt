@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -29,6 +30,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
@@ -37,6 +39,8 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.outlined.Campaign
+import androidx.compose.material.icons.outlined.EmojiEvents
+import androidx.compose.material.icons.outlined.Groups
 import androidx.compose.material.icons.outlined.PersonAdd
 import androidx.compose.material.icons.outlined.Quiz
 import androidx.compose.material.icons.outlined.Timer
@@ -47,19 +51,23 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.MenuDefaults
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -82,6 +90,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.benza.smartrooms.R
 import com.benza.smartrooms.data.room.model.QuestionType
 import com.benza.smartrooms.data.room.model.QuizKind
+import com.benza.smartrooms.data.room.model.RoomMemberAccountRole
+import com.benza.smartrooms.data.room.model.RoomMemberRole
 import com.benza.smartrooms.data.room.model.RoomQuizResult
 import com.benza.smartrooms.data.room.model.RoomQuizStatus
 import com.benza.smartrooms.data.room.model.RoomQuizSummary
@@ -107,6 +117,11 @@ private enum class RoomDetailPage(
 ) {
     FEED(R.string.room_detail_nav_feed, Icons.Outlined.Campaign),
     QUIZZES(R.string.room_detail_nav_quizzes, Icons.Outlined.Quiz),
+}
+
+private enum class RoomDetailTopPanel {
+    LEADERBOARD,
+    MEMBERS,
 }
 
 @Composable
@@ -141,10 +156,14 @@ internal fun RoomDetailRouteScreen(
         onRequestAnnouncementDeletionClick = viewModel::requestAnnouncementDeletion,
         onDismissAnnouncementDeletion = viewModel::dismissAnnouncementDeletion,
         onDeleteAnnouncementClick = viewModel::deleteAnnouncement,
+        onRequestMemberRemovalClick = viewModel::requestMemberRemoval,
+        onDismissMemberRemoval = viewModel::dismissMemberRemoval,
+        onRemoveMemberClick = viewModel::removePendingMember,
         onInfoMessageShown = viewModel::consumeInfoMessage,
     )
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun RoomDetailScreen(
     uiState: RoomDetailUiState,
@@ -158,12 +177,17 @@ internal fun RoomDetailScreen(
     onRequestAnnouncementDeletionClick: (RoomAnnouncementCardUiState) -> Unit,
     onDismissAnnouncementDeletion: () -> Unit,
     onDeleteAnnouncementClick: () -> Unit,
+    onRequestMemberRemovalClick: (RoomMemberUiState) -> Unit,
+    onDismissMemberRemoval: () -> Unit,
+    onRemoveMemberClick: () -> Unit,
     onInfoMessageShown: () -> Unit,
 ) {
     val snackbarHostState = remember { SnackbarHostState() }
     val pagerState = rememberPagerState(pageCount = { RoomDetailPage.entries.size })
     val scope = rememberCoroutineScope()
     var isFeedActionsExpanded by remember { mutableStateOf(false) }
+    var activeTopPanel by remember { mutableStateOf<RoomDetailTopPanel?>(null) }
+    val topPanelSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val infoMessage = uiState.infoMessageRes?.let { stringResource(it) }
 
     LaunchedEffect(infoMessage) {
@@ -234,6 +258,8 @@ internal fun RoomDetailScreen(
             RoomDetailTopBar(
                 roomName = uiState.roomName,
                 onBackClick = onBackClick,
+                onLeaderboardClick = { activeTopPanel = RoomDetailTopPanel.LEADERBOARD },
+                onMembersClick = { activeTopPanel = RoomDetailTopPanel.MEMBERS },
             )
             if (uiState.errorMessageRes != null) {
                 AuthFeedbackBanner(
@@ -275,6 +301,41 @@ internal fun RoomDetailScreen(
             onDismiss = onDismissAnnouncementDeletion,
             onConfirm = onDeleteAnnouncementClick,
         )
+    }
+
+    if (uiState.pendingMemberRemoval != null) {
+        RemoveMemberDialog(
+            pendingRemoval = uiState.pendingMemberRemoval,
+            isRemoving = uiState.removingMemberUserId != null,
+            onDismiss = onDismissMemberRemoval,
+            onConfirm = onRemoveMemberClick,
+        )
+    }
+
+    if (activeTopPanel != null) {
+        ModalBottomSheet(
+            onDismissRequest = { activeTopPanel = null },
+            sheetState = topPanelSheetState,
+        ) {
+            when (activeTopPanel) {
+                RoomDetailTopPanel.LEADERBOARD ->
+                    LeaderboardSheetContent(
+                        rows = uiState.quizLeaderboardRows,
+                        totalQuizCount = uiState.quizLeaderboardTotalQuizCount,
+                        isLoading = uiState.isLoadingQuizLeaderboard,
+                    )
+
+                RoomDetailTopPanel.MEMBERS ->
+                    MembersSheetContent(
+                        members = uiState.members,
+                        isLoading = uiState.isLoadingMembers,
+                        removingMemberUserId = uiState.removingMemberUserId,
+                        onRequestMemberRemovalClick = onRequestMemberRemovalClick,
+                    )
+
+                null -> Unit
+            }
+        }
     }
 }
 
@@ -367,6 +428,8 @@ private fun SmallFabAction(
 private fun RoomDetailTopBar(
     roomName: String,
     onBackClick: () -> Unit,
+    onLeaderboardClick: () -> Unit,
+    onMembersClick: () -> Unit,
 ) {
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -381,10 +444,23 @@ private fun RoomDetailTopBar(
         }
         Text(
             text = roomName,
+            modifier = Modifier.weight(1f),
             style = MaterialTheme.typography.headlineMedium,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
+        IconButton(onClick = onLeaderboardClick) {
+            Icon(
+                imageVector = Icons.Outlined.EmojiEvents,
+                contentDescription = stringResource(R.string.room_detail_nav_leaderboard),
+            )
+        }
+        IconButton(onClick = onMembersClick) {
+            Icon(
+                imageVector = Icons.Outlined.Groups,
+                contentDescription = stringResource(R.string.room_detail_nav_members),
+            )
+        }
     }
 }
 
@@ -495,6 +571,435 @@ private fun QuizzesPage(
                     )
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun MembersSheetContent(
+    members: List<RoomMemberUiState>,
+    isLoading: Boolean,
+    removingMemberUserId: String?,
+    onRequestMemberRemovalClick: (RoomMemberUiState) -> Unit,
+) {
+    LazyColumn(
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .fillMaxHeight(0.8f)
+                .padding(horizontal = 20.dp),
+        contentPadding = PaddingValues(bottom = 96.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        item {
+            SectionIntro(
+                title = stringResource(R.string.room_members_title),
+                subtitle = stringResource(R.string.room_members_subtitle),
+            )
+        }
+        when {
+            isLoading -> {
+                item { MembersLoadingSkeleton() }
+            }
+
+            members.isEmpty() -> {
+                item {
+                    FeedPlaceholderCard(text = stringResource(R.string.room_members_empty))
+                }
+            }
+
+            else -> {
+                items(
+                    items = members,
+                    key = RoomMemberUiState::userId,
+                ) { member ->
+                    RoomMemberCard(
+                        member = member,
+                        isRemoving = removingMemberUserId == member.userId,
+                        onRequestMemberRemovalClick = { onRequestMemberRemovalClick(member) },
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun RoomMemberCard(
+    member: RoomMemberUiState,
+    isRemoving: Boolean,
+    onRequestMemberRemovalClick: () -> Unit,
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.extraLarge,
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+    ) {
+        Row(
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .background(
+                        Brush.horizontalGradient(
+                            listOf(
+                                Lagoon.copy(alpha = 0.1f),
+                                MaterialTheme.colorScheme.surface,
+                            ),
+                        ),
+                    ).padding(16.dp),
+            horizontalArrangement = Arrangement.spacedBy(14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            UserAvatar(
+                displayName = member.displayName,
+                photoUrl = member.photoUrl,
+                modifier = Modifier.size(52.dp),
+            )
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                Text(
+                    text = member.displayName,
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    text =
+                        if (member.isProfileLoaded && member.email.isNotBlank()) {
+                            member.email
+                        } else {
+                            stringResource(R.string.room_members_profile_loading)
+                        },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    MemberRoleChip(
+                        text = stringResource(member.roomRole.labelRes()),
+                        isPrimary = member.roomRole == RoomMemberRole.OWNER,
+                    )
+                    member.accountRole?.let { accountRole ->
+                        MemberRoleChip(
+                            text = stringResource(accountRole.labelRes()),
+                            isPrimary = false,
+                        )
+                    }
+                }
+            }
+            if (member.canKick) {
+                OutlinedButton(
+                    onClick = onRequestMemberRemovalClick,
+                    enabled = !isRemoving,
+                ) {
+                    Text(
+                        text =
+                            stringResource(
+                                if (isRemoving) {
+                                    R.string.action_removing_member
+                                } else {
+                                    R.string.action_kick_member
+                                },
+                            ),
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun MemberRoleChip(
+    text: String,
+    isPrimary: Boolean,
+) {
+    Surface(
+        shape = MaterialTheme.shapes.medium,
+        color =
+            if (isPrimary) {
+                MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)
+            } else {
+                MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.42f)
+            },
+    ) {
+        Text(
+            text = text,
+            modifier = Modifier.padding(horizontal = 9.dp, vertical = 5.dp),
+            style = MaterialTheme.typography.labelSmall,
+            fontWeight = FontWeight.SemiBold,
+            color =
+                if (isPrimary) {
+                    MaterialTheme.colorScheme.primary
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                },
+        )
+    }
+}
+
+@Composable
+private fun MembersLoadingSkeleton() {
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        repeat(3) {
+            FeedSkeletonCard(
+                accentBrush =
+                    Brush.horizontalGradient(
+                        listOf(
+                            Lagoon.copy(alpha = 0.1f),
+                            MaterialTheme.colorScheme.surface,
+                        ),
+                    ),
+            )
+        }
+    }
+}
+
+@Composable
+private fun LeaderboardSheetContent(
+    rows: List<RoomQuizLeaderboardRowUiState>,
+    totalQuizCount: Int,
+    isLoading: Boolean,
+) {
+    LazyColumn(
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .fillMaxHeight(0.8f)
+                .padding(horizontal = 20.dp),
+        contentPadding = PaddingValues(bottom = 96.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        item {
+            SectionIntro(
+                title = stringResource(R.string.room_quiz_leaderboard_title),
+                subtitle = stringResource(R.string.room_quiz_leaderboard_subtitle),
+            )
+        }
+        item {
+            QuizLeaderboardCard(
+                rows = rows,
+                totalQuizCount = totalQuizCount,
+                isLoading = isLoading,
+            )
+        }
+    }
+}
+
+@Composable
+private fun QuizLeaderboardCard(
+    rows: List<RoomQuizLeaderboardRowUiState>,
+    totalQuizCount: Int,
+    isLoading: Boolean,
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.extraLarge,
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+    ) {
+        Column(
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .background(
+                        Brush.horizontalGradient(
+                            listOf(
+                                Coral.copy(alpha = 0.14f),
+                                MaterialTheme.colorScheme.surface,
+                            ),
+                        ),
+                    ).padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(
+                    text = stringResource(R.string.room_quiz_leaderboard_title),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Text(
+                    text =
+                        if (totalQuizCount > 0) {
+                            pluralStringResource(
+                                R.plurals.room_quiz_leaderboard_quiz_count,
+                                totalQuizCount,
+                                totalQuizCount,
+                            )
+                        } else {
+                            stringResource(R.string.room_quiz_leaderboard_empty_quizzes)
+                        },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+
+            when {
+                isLoading -> {
+                    QuizLeaderboardLoadingRows()
+                }
+
+                totalQuizCount == 0 -> {
+                    Text(
+                        text = stringResource(R.string.room_quiz_leaderboard_empty_quizzes_hint),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+
+                rows.isEmpty() -> {
+                    Text(
+                        text = stringResource(R.string.room_quiz_leaderboard_empty_students),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+
+                else -> {
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        rows.forEach { row ->
+                            QuizLeaderboardRow(row = row)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun QuizLeaderboardRow(row: RoomQuizLeaderboardRowUiState) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.large,
+        color =
+            if (row.isComplete) {
+                MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.28f)
+            } else {
+                MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.34f)
+            },
+    ) {
+        Row(
+            modifier = Modifier.padding(12.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Surface(
+                modifier = Modifier.size(36.dp),
+                shape = CircleShape,
+                color = MaterialTheme.colorScheme.surface.copy(alpha = 0.88f),
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Text(
+                        text = stringResource(R.string.room_quiz_leaderboard_rank, row.rank),
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.Bold,
+                    )
+                }
+            }
+            UserAvatar(
+                displayName = row.displayName,
+                photoUrl = row.photoUrl,
+                modifier = Modifier.size(42.dp),
+            )
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                Text(
+                    text = row.displayName,
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                if (row.email.isNotBlank()) {
+                    Text(
+                        text = row.email,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    LeaderboardStatusChip(isComplete = row.isComplete)
+                    Text(
+                        text =
+                            stringResource(
+                                R.string.room_quiz_leaderboard_solved_value,
+                                row.solvedQuizCount,
+                                row.totalQuizCount,
+                            ),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+            Text(
+                text =
+                    stringResource(
+                        R.string.room_quiz_result_score_value,
+                        row.score,
+                        row.maxScore,
+                    ),
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+            )
+        }
+    }
+}
+
+@Composable
+private fun LeaderboardStatusChip(isComplete: Boolean) {
+    Surface(
+        shape = MaterialTheme.shapes.medium,
+        color =
+            if (isComplete) {
+                MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)
+            } else {
+                MaterialTheme.colorScheme.error.copy(alpha = 0.14f)
+            },
+    ) {
+        Text(
+            text =
+                stringResource(
+                    if (isComplete) {
+                        R.string.room_quiz_leaderboard_complete
+                    } else {
+                        R.string.room_quiz_leaderboard_incomplete
+                    },
+                ),
+            modifier = Modifier.padding(horizontal = 9.dp, vertical = 5.dp),
+            style = MaterialTheme.typography.labelSmall,
+            fontWeight = FontWeight.SemiBold,
+            color =
+                if (isComplete) {
+                    MaterialTheme.colorScheme.primary
+                } else {
+                    MaterialTheme.colorScheme.error
+                },
+        )
+    }
+}
+
+@Composable
+private fun QuizLeaderboardLoadingRows() {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        repeat(3) {
+            SkeletonLine(
+                widthFraction = 1f,
+                height = 54.dp,
+            )
         }
     }
 }
@@ -1193,7 +1698,58 @@ private fun DeleteAnnouncementDialog(
     )
 }
 
+@Composable
+private fun RemoveMemberDialog(
+    pendingRemoval: PendingMemberRemoval,
+    isRemoving: Boolean,
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.remove_member_dialog_title)) },
+        text = {
+            Text(
+                text =
+                    stringResource(
+                        R.string.remove_member_dialog_message,
+                        pendingRemoval.displayName,
+                    ),
+            )
+        },
+        confirmButton = {
+            Button(
+                onClick = onConfirm,
+                enabled = !isRemoving,
+            ) {
+                Text(stringResource(R.string.action_kick_member))
+            }
+        },
+        dismissButton = {
+            TextButton(
+                onClick = onDismiss,
+                enabled = !isRemoving,
+            ) {
+                Text(stringResource(R.string.action_cancel))
+            }
+        },
+    )
+}
+
 private const val FEED_ATTACHMENT_PREVIEW_LIMIT = 3
+
+private fun RoomMemberRole.labelRes(): Int =
+    when (this) {
+        RoomMemberRole.OWNER -> R.string.room_member_role_owner
+        RoomMemberRole.COLLABORATOR -> R.string.room_member_role_collaborator
+        RoomMemberRole.MEMBER -> R.string.room_member_role_member
+    }
+
+private fun RoomMemberAccountRole.labelRes(): Int =
+    when (this) {
+        RoomMemberAccountRole.TEACHER -> R.string.profile_role_professor
+        RoomMemberAccountRole.STUDENT -> R.string.profile_role_student
+    }
 
 private fun labelRes(quizKind: QuizKind): Int =
     when (quizKind) {
@@ -1261,6 +1817,9 @@ private fun RoomDetailScreenPreview() {
             onRequestAnnouncementDeletionClick = {},
             onDismissAnnouncementDeletion = {},
             onDeleteAnnouncementClick = {},
+            onRequestMemberRemovalClick = {},
+            onDismissMemberRemoval = {},
+            onRemoveMemberClick = {},
             onInfoMessageShown = {},
         )
     }

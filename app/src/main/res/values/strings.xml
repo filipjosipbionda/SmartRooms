@@ -52,6 +52,8 @@
     <string name="action_retry">Retry</string>
     <string name="action_exit_quiz_save_progress">Finish attempt and exit quiz</string>
     <string name="action_manage_quizzes">Manage quizzes</string>
+    <string name="action_kick_member">Kick</string>
+    <string name="action_removing_member">Removing&#8230;</string>
     <string name="action_delete_quiz">Delete quiz</string>
     <string name="action_delete_short">Delete</string>
     <string name="action_delete_selected_quizzes">Delete selected</string>
@@ -112,6 +114,7 @@
     <string name="room_detail_question_type_title">Question type</string>
     <string name="room_detail_type_multiple_choice">Multiple choice</string>
     <string name="room_detail_type_fill_in_blank">Fill in the blank</string>
+    <string name="room_detail_type_mixed">Mixed</string>
     <string name="room_detail_type_word_scramble">Word scramble</string>
     <string name="room_detail_feed_title">Room feed</string>
     <string name="room_detail_feed_posts_subtitle">Posts and shared files stay here, without room meta clutter.</string>
@@ -127,6 +130,8 @@
     </plurals>
     <string name="room_detail_nav_feed">Feed</string>
     <string name="room_detail_nav_quizzes">Quizzes</string>
+    <string name="room_detail_nav_leaderboard">Leaderboard</string>
+    <string name="room_detail_nav_members">Members</string>
     <string name="room_detail_fab_actions">Open feed actions</string>
     <string name="room_detail_fab_actions_short">Actions</string>
     <string name="room_detail_quizzes_title">Room quizzes</string>
@@ -134,6 +139,29 @@
     <string name="room_detail_quizzes_subtitle_student">Quiz feed with approved quizzes that are ready to solve.</string>
     <string name="room_detail_quizzes_empty_manager">No approved quizzes are available yet. Open the manager to review drafts or create a new quiz.</string>
     <string name="room_detail_quizzes_empty_student">No approved quizzes are available yet.</string>
+    <string name="room_quiz_leaderboard_title">Overall leaderboard</string>
+    <string name="room_quiz_leaderboard_subtitle">Room ranking across all published quizzes.</string>
+    <plurals name="room_quiz_leaderboard_quiz_count">
+        <item quantity="one">%1$d quiz total</item>
+        <item quantity="other">%1$d quizzes total</item>
+    </plurals>
+    <string name="room_quiz_leaderboard_empty_quizzes">No published quizzes yet</string>
+    <string name="room_quiz_leaderboard_empty_quizzes_hint">Publish at least one quiz to start tracking the room leaderboard.</string>
+    <string name="room_quiz_leaderboard_empty_students">No students are in this room yet.</string>
+    <string name="room_quiz_leaderboard_rank">#%1$d</string>
+    <string name="room_quiz_leaderboard_solved_value">%1$d/%2$d solved</string>
+    <string name="room_quiz_leaderboard_complete">Complete</string>
+    <string name="room_quiz_leaderboard_incomplete">Incomplete</string>
+    <string name="room_members_title">Room members</string>
+    <string name="room_members_subtitle">Everyone in this room and their access role.</string>
+    <string name="room_members_empty">No members were found for this room.</string>
+    <string name="room_members_profile_loading">Loading profile&#8230;</string>
+    <string name="room_member_role_owner">Owner</string>
+    <string name="room_member_role_collaborator">Collaborator</string>
+    <string name="room_member_role_member">Member</string>
+    <string name="room_member_removed">Member removed from the room.</string>
+    <string name="remove_member_dialog_title">Remove member?</string>
+    <string name="remove_member_dialog_message">This will remove %1$s from the room. They will need a new invitation to join again.</string>
     <string name="room_quiz_timer_enabled_value">Timed</string>
     <string name="room_quiz_timer_none_value">No timer</string>
     <string name="room_quiz_result_progress_label">Progress</string>
@@ -171,6 +199,23 @@
     </plurals>
     <string name="room_quizzes_create_title">Create a new quiz</string>
     <string name="room_quizzes_create_subtitle">Choose what the quiz should cover, then set the format, question count, and optional timer.</string>
+    <string name="room_quizzes_catalog_title">Knowledge catalog</string>
+    <string name="room_quizzes_catalog_subtitle">%1$s %2$s units</string>
+    <plurals name="room_quizzes_catalog_word_count">
+        <item quantity="one">%1$d starter word</item>
+        <item quantity="other">%1$d starter words</item>
+    </plurals>
+    <plurals name="room_quizzes_catalog_unit_count">
+        <item quantity="one">%1$d selected unit</item>
+        <item quantity="other">%1$d selected units</item>
+    </plurals>
+    <string name="room_quizzes_catalog_selected_label">Selected units</string>
+    <string name="room_quizzes_catalog_choose">Choose from catalog</string>
+    <string name="room_quizzes_catalog_change">Change catalog units</string>
+    <string name="room_quizzes_catalog_use_selected">Use selected</string>
+    <string name="knowledge_catalog_title">Knowledge catalog</string>
+    <string name="knowledge_catalog_subtitle">%1$s %2$s units</string>
+    <string name="knowledge_catalog_empty">No catalog units are available for this room level yet.</string>
     <string name="room_quizzes_topic_placeholder">For example: conditionals, passive voice, travel phrases, reported speech</string>
     <string name="room_quizzes_topic_value">Topic: %1$s</string>
     <string name="room_quizzes_kind_title">Quiz kind</string>
@@ -301,6 +346,10 @@
     <string name="error_room_invitation_permission">Only the invited user can change this invitation.</string>
     <string name="error_room_invitation_unavailable">Invitation is no longer available.</string>
     <string name="error_room_invitation_generic">Invitation action failed. Try again.</string>
+    <string name="error_room_member_not_found">The selected member was not found in this room.</string>
+    <string name="error_room_member_remove_permission">Only the room owner or a collaborator can remove members.</string>
+    <string name="error_room_member_remove_unavailable">This member cannot be removed from the room.</string>
+    <string name="error_room_member_remove_generic">Member could not be removed. Try again.</string>
     <string name="error_quiz_generation_permission">You are not allowed to generate a quiz for this room.</string>
     <string name="error_quiz_generation_room_not_found">The selected room was not found.</string>
     <string name="error_quiz_room_cefr_missing">This room does not have a CEFR level yet. Edit or recreate the room before generating quizzes.</string>
@@ -309,6 +358,7 @@
     <string name="error_quiz_topic_required">Quiz topic is required.</string>
     <string name="error_quiz_question_count_required">Enter how many questions to generate.</string>
     <string name="error_quiz_question_count_invalid">Question count must be a whole number from 1 to 50.</string>
+    <string name="error_quiz_mixed_question_count_invalid">Mixed quizzes need at least 2 questions.</string>
     <string name="error_quiz_time_limit_required">Enter a time limit in seconds.</string>
     <string name="delete_post_dialog_title">Delete this post?</string>
     <string name="delete_post_dialog_message">This will remove "%1$s" from the room feed and delete all of its attachments. This action cannot be undone.</string>

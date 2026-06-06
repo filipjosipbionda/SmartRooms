@@ -1,10 +1,11 @@
 // These types describe the data we read/write in Firestore and pass through helpers.
 
 export type CefrLevel = "A1" | "A2" | "B1" | "B2" | "C1" | "C2";
-export type QuestionType = "multiple_choice" | "fill_in_blank" | "word_scramble";
+export type QuestionType = "multiple_choice" | "fill_in_blank" | "mixed" | "word_scramble";
 export type QuizKind = "grammar" | "vocabulary";
 
 export type MultipleChoiceGeneratedQuestion = {
+  type?: "multiple_choice";
   prompt: string;
   options: string[];
   correctOptionIndex: number;
@@ -12,12 +13,14 @@ export type MultipleChoiceGeneratedQuestion = {
 };
 
 export type FillInBlankGeneratedQuestion = {
+  type?: "fill_in_blank";
   prompt: string;
   answerText: string;
   explanation: string;
 };
 
 export type WordScrambleGeneratedQuestion = {
+  type?: "word_scramble";
   prompt: string;
   answerWord: string;
   shuffledLetters: string[];
@@ -26,10 +29,7 @@ export type WordScrambleGeneratedQuestion = {
 
 export type GeneratedQuiz = {
   cefrLevel: CefrLevel;
-  questions:
-    | MultipleChoiceGeneratedQuestion[]
-    | FillInBlankGeneratedQuestion[]
-    | WordScrambleGeneratedQuestion[];
+  questions: Array<MultipleChoiceGeneratedQuestion | FillInBlankGeneratedQuestion | WordScrambleGeneratedQuestion>;
 };
 
 export type RoomDocument = {

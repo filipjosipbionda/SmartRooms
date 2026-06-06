@@ -5,7 +5,8 @@ export { resolveStartupDestination } from "./startup.js";
 export {
   sendRoomInvitation,
   acceptRoomInvitation,
-  rejectRoomInvitation
+  rejectRoomInvitation,
+  removeRoomMember
 } from "./roomInvitations.js";
 export { generateQuizForRoom, retryQuizForRoom } from "./quizzes.js";
 export { syncTeacherRequestToUserProfile } from "./teacherRequests.js";

@@ -9,7 +9,11 @@ import com.benza.smartrooms.data.room.model.RoomAnnouncement
 import com.benza.smartrooms.data.room.model.RoomAnnouncementAttachment
 import com.benza.smartrooms.data.room.model.RoomInvitation
 import com.benza.smartrooms.data.room.model.RoomInvitationAccess
+import com.benza.smartrooms.data.room.model.RoomMember
+import com.benza.smartrooms.data.room.model.RoomMemberAccountRole
+import com.benza.smartrooms.data.room.model.RoomMemberRole
 import com.benza.smartrooms.data.room.model.RoomQuiz
+import com.benza.smartrooms.data.room.model.RoomQuizLeaderboardStudent
 import com.benza.smartrooms.data.room.model.RoomQuizQuestion
 import com.benza.smartrooms.data.room.model.RoomQuizQuestionResult
 import com.benza.smartrooms.data.room.model.RoomQuizResult
@@ -20,6 +24,7 @@ import com.benza.smartrooms.data.room.model.UpdateAnnouncementRequest
 import com.google.android.gms.tasks.Task
 import com.google.firebase.firestore.DocumentSnapshot
 import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.ListenerRegistration
 import com.google.firebase.firestore.Query
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.asExecutor
@@ -264,6 +269,155 @@ internal class FirestoreRoomDataSource(
                     }
 
             awaitClose { registration.remove() }
+        }
+
+    internal fun observeQuizLeaderboardStudents(
+        roomId: String,
+        memberIds: List<String>,
+    ): Flow<List<RoomQuizLeaderboardStudent>> =
+        callbackFlow {
+            val uniqueMemberIds = memberIds.distinct().filter(String::isNotBlank)
+            if (uniqueMemberIds.isEmpty()) {
+                trySend(emptyList())
+                awaitClose {}
+                return@callbackFlow
+            }
+
+            val loadedProfiles = mutableSetOf<String>()
+            val loadedResults = mutableSetOf<String>()
+            val profiles = mutableMapOf<String, LeaderboardStudentProfile?>()
+            val resultsByUserId = mutableMapOf<String, List<RoomQuizResult>>()
+
+            fun publishIfReady() {
+                if (!loadedProfiles.containsAll(uniqueMemberIds) || !loadedResults.containsAll(uniqueMemberIds)) {
+                    return
+                }
+
+                val students =
+                    uniqueMemberIds.mapNotNull { userId ->
+                        val profile = profiles[userId] ?: return@mapNotNull null
+                        RoomQuizLeaderboardStudent(
+                            userId = userId,
+                            displayName = profile.displayName,
+                            email = profile.email,
+                            photoUrl = profile.photoUrl,
+                            results = resultsByUserId[userId].orEmpty(),
+                        )
+                    }
+
+                trySend(students)
+            }
+
+            val registrations = mutableListOf<ListenerRegistration>()
+            uniqueMemberIds.forEach { userId ->
+                registrations +=
+                    firestore
+                        .collection(USERS_COLLECTION)
+                        .document(userId)
+                        .addSnapshotListener(FIRESTORE_CALLBACK_EXECUTOR) { snapshot, error ->
+                            if (error != null) {
+                                close(error)
+                                return@addSnapshotListener
+                            }
+
+                            loadedProfiles += userId
+                            profiles[userId] = snapshot?.toLeaderboardStudentProfile()
+                            publishIfReady()
+                        }
+
+                registrations +=
+                    firestore
+                        .collection(USERS_COLLECTION)
+                        .document(userId)
+                        .collection(QUIZ_RESULTS_COLLECTION)
+                        .addSnapshotListener(FIRESTORE_CALLBACK_EXECUTOR) { snapshot, error ->
+                            if (error != null) {
+                                close(error)
+                                return@addSnapshotListener
+                            }
+
+                            loadedResults += userId
+                            resultsByUserId[userId] =
+                                snapshot
+                                    ?.documents
+                                    .orEmpty()
+                                    .mapNotNull { it.toQuizResult(userId) }
+                                    .filter { it.roomId == roomId }
+                            publishIfReady()
+                        }
+            }
+
+            awaitClose { registrations.forEach(ListenerRegistration::remove) }
+        }
+
+    internal fun observeRoomMembers(
+        ownerId: String,
+        memberIds: List<String>,
+        collaboratorIds: List<String>,
+    ): Flow<List<RoomMember>> =
+        callbackFlow {
+            val roleByUserId =
+                buildMap {
+                    memberIds.distinct().filter(String::isNotBlank).forEach { userId ->
+                        put(userId, RoomMemberRole.MEMBER)
+                    }
+                    collaboratorIds.distinct().filter(String::isNotBlank).forEach { userId ->
+                        put(userId, RoomMemberRole.COLLABORATOR)
+                    }
+                    ownerId.takeIf(String::isNotBlank)?.let { userId ->
+                        put(userId, RoomMemberRole.OWNER)
+                    }
+                }
+            val userIds = roleByUserId.keys.toList()
+            if (userIds.isEmpty()) {
+                trySend(emptyList())
+                awaitClose {}
+                return@callbackFlow
+            }
+
+            val profiles = mutableMapOf<String, RoomMemberProfile?>()
+
+            fun publishMembers() {
+                val members =
+                    userIds
+                        .map { userId ->
+                            val profile = profiles[userId]
+                            RoomMember(
+                                userId = userId,
+                                displayName = profile?.displayName ?: DEFAULT_MEMBER_NAME,
+                                email = profile?.email.orEmpty(),
+                                photoUrl = profile?.photoUrl,
+                                roomRole = roleByUserId.getValue(userId),
+                                accountRole = profile?.accountRole,
+                                isProfileLoaded = profile != null,
+                            )
+                        }.sortedWith(
+                            compareBy<RoomMember> { it.roomRole.sortOrder() }
+                                .thenBy { it.displayName.lowercase() },
+                        )
+
+                trySend(members)
+            }
+
+            publishMembers()
+
+            val registrations =
+                userIds.map { userId ->
+                    firestore
+                        .collection(USERS_COLLECTION)
+                        .document(userId)
+                        .addSnapshotListener(FIRESTORE_CALLBACK_EXECUTOR) { snapshot, error ->
+                            if (error != null) {
+                                close(error)
+                                return@addSnapshotListener
+                            }
+
+                            profiles[userId] = snapshot?.toRoomMemberProfile()
+                            publishMembers()
+                        }
+                }
+
+            awaitClose { registrations.forEach(ListenerRegistration::remove) }
         }
 
     /**
@@ -670,6 +824,7 @@ private fun DocumentSnapshot.toRoomInvitation(): RoomInvitation? {
 private fun String?.toQuestionType(default: QuestionType = QuestionType.MULTIPLE_CHOICE): QuestionType =
     when (this) {
         "fill_in_blank" -> QuestionType.FILL_IN_BLANK
+        "mixed" -> QuestionType.MIXED
         "multiple_choice" -> QuestionType.MULTIPLE_CHOICE
         "word_scramble" -> QuestionType.WORD_SCRAMBLE
         else -> default
@@ -751,6 +906,66 @@ private fun DocumentSnapshot.toQuizResult(userId: String): RoomQuizResult? {
     )
 }
 
+private fun DocumentSnapshot.toLeaderboardStudentProfile(): LeaderboardStudentProfile? {
+    if (!exists() || getString(ROLE_FIELD) != STUDENT_ROLE) return null
+
+    val email = getString(EMAIL_FIELD).orEmpty()
+    val displayName =
+        getString(DISPLAY_NAME_FIELD)
+            .orEmpty()
+            .ifBlank { email.substringBefore("@").ifBlank { DEFAULT_STUDENT_NAME } }
+
+    return LeaderboardStudentProfile(
+        displayName = displayName,
+        email = email,
+        photoUrl = getString(PHOTO_URL_FIELD)?.takeIf(String::isNotBlank),
+    )
+}
+
+private fun DocumentSnapshot.toRoomMemberProfile(): RoomMemberProfile? {
+    if (!exists()) return null
+
+    val email = getString(EMAIL_FIELD).orEmpty()
+    val displayName =
+        getString(DISPLAY_NAME_FIELD)
+            .orEmpty()
+            .ifBlank { email.substringBefore("@").ifBlank { DEFAULT_MEMBER_NAME } }
+
+    return RoomMemberProfile(
+        displayName = displayName,
+        email = email,
+        photoUrl = getString(PHOTO_URL_FIELD)?.takeIf(String::isNotBlank),
+        accountRole = getString(ROLE_FIELD).toRoomMemberAccountRole(),
+    )
+}
+
+private fun String?.toRoomMemberAccountRole(): RoomMemberAccountRole? =
+    when (this) {
+        TEACHER_ROLE -> RoomMemberAccountRole.TEACHER
+        STUDENT_ROLE -> RoomMemberAccountRole.STUDENT
+        else -> null
+    }
+
+private fun RoomMemberRole.sortOrder(): Int =
+    when (this) {
+        RoomMemberRole.OWNER -> 0
+        RoomMemberRole.COLLABORATOR -> 1
+        RoomMemberRole.MEMBER -> 2
+    }
+
+private data class LeaderboardStudentProfile(
+    val displayName: String,
+    val email: String,
+    val photoUrl: String?,
+)
+
+private data class RoomMemberProfile(
+    val displayName: String,
+    val email: String,
+    val photoUrl: String?,
+    val accountRole: RoomMemberAccountRole?,
+)
+
 private fun DocumentSnapshot.getStringList(field: String): List<String> =
     get(field)
         .let { it as? List<*> }
@@ -821,6 +1036,8 @@ private fun Map<*, *>.toQuizQuestion(
                 answerText = answerText,
             )
         }
+
+        QuestionType.MIXED -> null
 
         QuestionType.WORD_SCRAMBLE -> {
             val answerWord = getStringValue(QUIZ_QUESTION_ANSWER_WORD_FIELD) ?: return null
@@ -937,6 +1154,12 @@ private const val QUIZ_RESULTS_COLLECTION = "quizResults"
 private const val QUIZZES_COLLECTION = "quizzes"
 private const val ANNOUNCEMENTS_COLLECTION = "announcements"
 private const val ID_FIELD = "id"
+private const val EMAIL_FIELD = "email"
+private const val DISPLAY_NAME_FIELD = "displayName"
+private const val PHOTO_URL_FIELD = "photoUrl"
+private const val ROLE_FIELD = "role"
+private const val TEACHER_ROLE = "teacher"
+private const val STUDENT_ROLE = "student"
 private const val ROOM_ID_FIELD = "roomId"
 private const val QUIZ_ID_FIELD = "quizId"
 private const val ROOM_NAME_FIELD = "roomName"
@@ -961,6 +1184,8 @@ private const val QUIZ_CREATED_AT_EPOCH_FIELD = "createdAtEpochMillis"
 private const val DEFAULT_TOPIC = "AI"
 private const val DEFAULT_ROOM_NAME = "Untitled room"
 private const val DEFAULT_INVITER_NAME = "Room owner"
+private const val DEFAULT_STUDENT_NAME = "Student"
+private const val DEFAULT_MEMBER_NAME = "Member"
 private const val DEFAULT_GENERATING_QUIZ_TITLE = "Generating quiz..."
 private const val QUIZ_TITLE_FIELD = "title"
 private const val QUIZ_CLIENT_REQUEST_ID_FIELD = "clientRequestId"

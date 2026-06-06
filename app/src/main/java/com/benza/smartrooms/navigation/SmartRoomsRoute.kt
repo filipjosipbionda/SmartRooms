@@ -100,6 +100,16 @@ internal data class RoomQuizBuilderRoute(
 ) : SmartRoomsDestination
 
 /**
+ * Type-safe destination for choosing a CEFR knowledge catalog unit.
+ */
+@Serializable
+internal data class KnowledgeCatalogRoute(
+    val cefrLevel: String,
+    val quizKind: String,
+    val selectedCatalogItemIds: String = "",
+) : SmartRoomsDestination
+
+/**
  * Type-safe destination for solving one generated quiz.
  */
 @Serializable

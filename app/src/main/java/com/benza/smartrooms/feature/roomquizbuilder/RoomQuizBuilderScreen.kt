@@ -73,6 +73,7 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.benza.smartrooms.R
+import com.benza.smartrooms.data.knowledge.KnowledgeCatalogItem
 import com.benza.smartrooms.data.room.model.QuestionType
 import com.benza.smartrooms.data.room.model.QuizKind
 import com.benza.smartrooms.data.room.model.RoomQuizStatus
@@ -101,7 +102,10 @@ internal fun RoomQuizBuilderRouteScreen(
     roomId: String,
     roomName: String,
     roomTopic: String,
+    selectedCatalogItemIds: String,
     onBackClick: () -> Unit,
+    onCatalogItemsResultConsumed: () -> Unit,
+    onOpenCatalogClick: (String, String, String) -> Unit,
     onOpenReviewClick: (String) -> Unit,
     onOpenQuizClick: (String) -> Unit,
     viewModel: RoomQuizBuilderViewModel =
@@ -111,9 +115,16 @@ internal fun RoomQuizBuilderRouteScreen(
 ) {
     val uiState = viewModel.uiState.collectAsStateWithLifecycle()
 
+    LaunchedEffect(selectedCatalogItemIds) {
+        if (selectedCatalogItemIds.isBlank()) return@LaunchedEffect
+        viewModel.onCatalogItemsSelected(selectedCatalogItemIds.toCatalogItemIdSet())
+        onCatalogItemsResultConsumed()
+    }
+
     RoomQuizBuilderScreen(
         uiState = uiState.value,
         onBackClick = onBackClick,
+        onOpenCatalogClick = onOpenCatalogClick,
         onOpenReviewClick = onOpenReviewClick,
         onOpenQuizClick = onOpenQuizClick,
         onQuizKindSelected = viewModel::onQuizKindSelected,
@@ -143,6 +154,7 @@ internal fun RoomQuizBuilderRouteScreen(
 internal fun RoomQuizBuilderScreen(
     uiState: RoomQuizBuilderUiState,
     onBackClick: () -> Unit,
+    onOpenCatalogClick: (String, String, String) -> Unit,
     onOpenReviewClick: (String) -> Unit,
     onOpenQuizClick: (String) -> Unit,
     onQuizKindSelected: (QuizKind) -> Unit,
@@ -245,6 +257,8 @@ internal fun RoomQuizBuilderScreen(
                         QuizPage.CREATE ->
                             CreateQuizPage(
                                 selectedQuizKind = uiState.selectedQuizKind,
+                                selectedCatalogItems = uiState.selectedCatalogItems,
+                                cefrLevel = uiState.cefrLevel,
                                 titleInput = uiState.titleInput,
                                 questionCountInput = uiState.questionCountInput,
                                 selectedQuestionType = uiState.selectedQuestionType,
@@ -259,6 +273,13 @@ internal fun RoomQuizBuilderScreen(
                                 questionTimeLimitErrorRes = uiState.questionTimeLimitErrorRes,
                                 isGeneratingQuiz = uiState.isGeneratingQuiz,
                                 onQuizKindSelected = onQuizKindSelected,
+                                onOpenCatalogClick = {
+                                    onOpenCatalogClick(
+                                        uiState.cefrLevel,
+                                        uiState.selectedQuizKind.toRouteValue(),
+                                        uiState.selectedCatalogItemIds.toCatalogItemRouteValue(),
+                                    )
+                                },
                                 onTitleChanged = onTitleChanged,
                                 onTopicChanged = onTopicChanged,
                                 onVocabularyWordsChanged = onVocabularyWordsChanged,
@@ -540,6 +561,8 @@ private val SELECTION_OVERLAY_BUTTON_HEIGHT = 44.dp
 @Composable
 private fun CreateQuizPage(
     selectedQuizKind: QuizKind,
+    selectedCatalogItems: List<KnowledgeCatalogItem>,
+    cefrLevel: String,
     titleInput: String,
     questionCountInput: String,
     selectedQuestionType: QuestionType,
@@ -554,6 +577,7 @@ private fun CreateQuizPage(
     questionTimeLimitErrorRes: Int?,
     isGeneratingQuiz: Boolean,
     onQuizKindSelected: (QuizKind) -> Unit,
+    onOpenCatalogClick: () -> Unit,
     onTitleChanged: (String) -> Unit,
     onTopicChanged: (String) -> Unit,
     onVocabularyWordsChanged: (String) -> Unit,
@@ -570,6 +594,8 @@ private fun CreateQuizPage(
         item {
             GenerateQuizCard(
                 selectedQuizKind = selectedQuizKind,
+                selectedCatalogItems = selectedCatalogItems,
+                cefrLevel = cefrLevel,
                 titleInput = titleInput,
                 questionCountInput = questionCountInput,
                 selectedQuestionType = selectedQuestionType,
@@ -584,6 +610,7 @@ private fun CreateQuizPage(
                 questionTimeLimitErrorRes = questionTimeLimitErrorRes,
                 isGeneratingQuiz = isGeneratingQuiz,
                 onQuizKindSelected = onQuizKindSelected,
+                onOpenCatalogClick = onOpenCatalogClick,
                 onTitleChanged = onTitleChanged,
                 onTopicChanged = onTopicChanged,
                 onVocabularyWordsChanged = onVocabularyWordsChanged,
@@ -615,6 +642,8 @@ private fun PlaceholderCard(text: String) {
 @Composable
 private fun GenerateQuizCard(
     selectedQuizKind: QuizKind,
+    selectedCatalogItems: List<KnowledgeCatalogItem>,
+    cefrLevel: String,
     titleInput: String,
     questionCountInput: String,
     selectedQuestionType: QuestionType,
@@ -629,6 +658,7 @@ private fun GenerateQuizCard(
     questionTimeLimitErrorRes: Int?,
     isGeneratingQuiz: Boolean,
     onQuizKindSelected: (QuizKind) -> Unit,
+    onOpenCatalogClick: () -> Unit,
     onTitleChanged: (String) -> Unit,
     onTopicChanged: (String) -> Unit,
     onVocabularyWordsChanged: (String) -> Unit,
@@ -677,6 +707,12 @@ private fun GenerateQuizCard(
                     }
                 }
             }
+            KnowledgeCatalogSummaryCard(
+                selectedCatalogItems = selectedCatalogItems,
+                cefrLevel = cefrLevel,
+                selectedQuizKind = selectedQuizKind,
+                onOpenCatalogClick = onOpenCatalogClick,
+            )
             OutlinedTextField(
                 value = titleInput,
                 onValueChange = onTitleChanged,
@@ -740,7 +776,11 @@ private fun GenerateQuizCard(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
-                        listOf(QuestionType.MULTIPLE_CHOICE, QuestionType.FILL_IN_BLANK).forEach { questionType ->
+                        listOf(
+                            QuestionType.MULTIPLE_CHOICE,
+                            QuestionType.FILL_IN_BLANK,
+                            QuestionType.MIXED,
+                        ).forEach { questionType ->
                             FilterChip(
                                 selected = questionType == selectedQuestionType,
                                 onClick = { onQuestionTypeSelected(questionType) },
@@ -806,6 +846,103 @@ private fun GenerateQuizCard(
                                 R.string.action_generating_room_quiz
                             } else {
                                 R.string.action_generate_room_quiz
+                            },
+                        ),
+                    maxLines = 1,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun KnowledgeCatalogSummaryCard(
+    selectedCatalogItems: List<KnowledgeCatalogItem>,
+    cefrLevel: String,
+    selectedQuizKind: QuizKind,
+    onOpenCatalogClick: () -> Unit,
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors =
+            CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
+            ),
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(
+                    text = stringResource(R.string.room_quizzes_catalog_title),
+                    style = MaterialTheme.typography.titleSmall,
+                )
+                Text(
+                    text =
+                        stringResource(
+                            R.string.room_quizzes_catalog_subtitle,
+                            cefrLevel.ifBlank { stringResource(R.string.room_detail_level_not_set) },
+                            stringResource(selectedQuizKind.labelRes()),
+                        ),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            if (selectedCatalogItems.isNotEmpty()) {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(
+                        text = stringResource(R.string.room_quizzes_catalog_selected_label),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                    selectedCatalogItems.forEach { item ->
+                        Text(
+                            text = item.title,
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                    }
+                    Text(
+                        text =
+                            pluralStringResource(
+                                R.plurals.room_quizzes_catalog_unit_count,
+                                selectedCatalogItems.size,
+                                selectedCatalogItems.size,
+                            ),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    val starterWordCount =
+                        selectedCatalogItems
+                            .flatMap(KnowledgeCatalogItem::suggestedVocabularyWords)
+                            .distinct()
+                            .size
+                    if (starterWordCount > 0) {
+                        Text(
+                            text =
+                                pluralStringResource(
+                                    R.plurals.room_quizzes_catalog_word_count,
+                                    starterWordCount,
+                                    starterWordCount,
+                                ),
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                    }
+                }
+            }
+            Button(
+                onClick = onOpenCatalogClick,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text(
+                    text =
+                        stringResource(
+                            if (selectedCatalogItems.isEmpty()) {
+                                R.string.room_quizzes_catalog_choose
+                            } else {
+                                R.string.room_quizzes_catalog_change
                             },
                         ),
                     maxLines = 1,
@@ -1235,6 +1372,7 @@ private fun RoomQuizBuilderScreenPreview() {
                     isLoadingQuizzes = false,
                 ),
             onBackClick = {},
+            onOpenCatalogClick = { _, _, _ -> },
             onOpenReviewClick = {},
             onOpenQuizClick = {},
             onQuizKindSelected = {},
@@ -1265,3 +1403,19 @@ private fun QuizKind.labelRes(): Int =
         QuizKind.GRAMMAR -> R.string.room_quiz_kind_grammar
         QuizKind.VOCABULARY -> R.string.room_quiz_kind_vocabulary
     }
+
+private fun QuizKind.toRouteValue(): String =
+    when (this) {
+        QuizKind.GRAMMAR -> "grammar"
+        QuizKind.VOCABULARY -> "vocabulary"
+    }
+
+private fun Set<String>.toCatalogItemRouteValue(): String = joinToString(separator = CATALOG_ITEM_ID_SEPARATOR)
+
+private fun String.toCatalogItemIdSet(): Set<String> =
+    split(CATALOG_ITEM_ID_SEPARATOR)
+        .map(String::trim)
+        .filter(String::isNotBlank)
+        .toSet()
+
+private const val CATALOG_ITEM_ID_SEPARATOR = ","

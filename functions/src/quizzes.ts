@@ -68,6 +68,9 @@ export const generateQuizForRoom = onCall(
     const questionType = quizKind === "vocabulary"
       ? "word_scramble"
       : normalizeQuestionType(request.data.questionType);
+    if (questionType === "mixed" && questionCount < 2) {
+      throw new HttpsError("invalid-argument", "Mixed quizzes need at least 2 questions.");
+    }
     const questionTimeLimitSeconds = normalizeQuestionTimeLimitSeconds(request.data.questionTimeLimitSeconds);
 
     const roomRef = db.collection(ROOMS_COLLECTION).doc(roomId);
@@ -203,6 +206,9 @@ export const retryQuizForRoom = onCall(
     const questionType = quizKind === "vocabulary"
       ? "word_scramble"
       : normalizeQuestionType(quiz.questionType);
+    if (questionType === "mixed" && questionCount < 2) {
+      throw new HttpsError("invalid-argument", "Mixed quizzes need at least 2 questions.");
+    }
     const questionTimeLimitSeconds = normalizeQuestionTimeLimitSeconds(quiz.questionTimeLimitSeconds);
     const status = typeof quiz.status === "string" ? quiz.status : "";
 
@@ -343,6 +349,18 @@ function buildQuizPrompt(input: {
       "- answerText must be the exact missing phrase.",
       "- Do not include answer choices."
     ]
+    : input.questionType === "mixed"
+      ? [
+        `Create exactly ${input.questionCount} quiz questions with both multiple-choice and fill-in-the-blank questions.`,
+        "Use this exact schema:",
+        "{\"cefrLevel\":\"A1|A2|B1|B2|C1|C2\",\"questions\":[{\"type\":\"multiple_choice\",\"prompt\":\"string\",\"options\":[\"string\",\"string\",\"string\",\"string\"],\"correctOptionIndex\":0,\"explanation\":\"string\"},{\"type\":\"fill_in_blank\",\"prompt\":\"string with exactly one blank written as ____\",\"answerText\":\"string\",\"explanation\":\"string\"}]}",
+        "Rules:",
+        "- Include at least one multiple_choice question and at least one fill_in_blank question.",
+        "- Keep the two question types as evenly balanced as possible.",
+        "- For multiple_choice questions, include exactly 4 options and correctOptionIndex must be 0, 1, 2, or 3.",
+        "- For fill_in_blank questions, each prompt must contain exactly one blank written as ____.",
+        "- Do not include answer choices on fill_in_blank questions."
+      ]
     : [
       `Create exactly ${input.questionCount} multiple-choice quiz questions.`,
       "Use this exact schema:",
@@ -461,12 +479,18 @@ function validateQuiz(
     quiz.cefrLevel = requestedCefrLevel;
   }
 
+  let multipleChoiceCount = 0;
+  let fillInBlankCount = 0;
+
   quiz.questions.forEach((question, index) => {
     if (!question.prompt || !question.explanation) {
       throw new HttpsError("internal", `AI returned an invalid question at index ${index}.`);
     }
 
-    if (requestedQuestionType === "multiple_choice") {
+    const questionType = resolveGeneratedQuestionType(question, requestedQuestionType, index);
+
+    if (questionType === "multiple_choice") {
+      multipleChoiceCount += 1;
       const multipleChoiceQuestion = question as MultipleChoiceGeneratedQuestion;
       if (
         !Array.isArray(multipleChoiceQuestion.options) ||
@@ -480,7 +504,8 @@ function validateQuiz(
       return;
     }
 
-    if (requestedQuestionType === "fill_in_blank") {
+    if (questionType === "fill_in_blank") {
+      fillInBlankCount += 1;
       const fillInBlankQuestion = question as FillInBlankGeneratedQuestion;
       if (!fillInBlankQuestion.answerText || question.prompt.split("____").length !== 2) {
         throw new HttpsError("internal", `AI returned an invalid question at index ${index}.`);
@@ -497,6 +522,26 @@ function validateQuiz(
       throw new HttpsError("internal", `AI returned an invalid question at index ${index}.`);
     }
   });
+
+  if (requestedQuestionType === "mixed" && (multipleChoiceCount === 0 || fillInBlankCount === 0)) {
+    throw new HttpsError("internal", "AI returned a mixed quiz without both question types.");
+  }
+}
+
+function resolveGeneratedQuestionType(
+  question: MultipleChoiceGeneratedQuestion | FillInBlankGeneratedQuestion | WordScrambleGeneratedQuestion,
+  requestedQuestionType: QuestionType,
+  index: number
+): QuestionType {
+  if (requestedQuestionType !== "mixed") {
+    return requestedQuestionType;
+  }
+
+  if (question.type === "multiple_choice" || question.type === "fill_in_blank") {
+    return question.type;
+  }
+
+  throw new HttpsError("internal", `AI returned an invalid mixed question type at index ${index}.`);
 }
 
 function toStoredQuestion(
@@ -505,7 +550,9 @@ function toStoredQuestion(
   index: number,
   questionTimeLimitSeconds: number | null
 ) {
-  if (questionType === "multiple_choice") {
+  const storedQuestionType = resolveGeneratedQuestionType(question, questionType, index);
+
+  if (storedQuestionType === "multiple_choice") {
     const multipleChoiceQuestion = question as MultipleChoiceGeneratedQuestion;
     return {
       id: `q${index + 1}`,
@@ -518,7 +565,7 @@ function toStoredQuestion(
     };
   }
 
-  if (questionType === "fill_in_blank") {
+  if (storedQuestionType === "fill_in_blank") {
     const fillInBlankQuestion = question as FillInBlankGeneratedQuestion;
     return {
       id: `q${index + 1}`,
@@ -559,6 +606,24 @@ function buildQuizResponseSchema(questionCount: number, questionType: QuestionTy
             },
             required: ["prompt", "answerText", "explanation"]
           }
+          : questionType === "mixed"
+            ? {
+              type: "object",
+              properties: {
+                type: { type: "string", enum: ["multiple_choice", "fill_in_blank"] },
+                prompt: { type: "string" },
+                options: {
+                  type: "array",
+                  minItems: 4,
+                  maxItems: 4,
+                  items: { type: "string" }
+                },
+                correctOptionIndex: { type: "integer" },
+                answerText: { type: "string" },
+                explanation: { type: "string" }
+              },
+              required: ["type", "prompt", "explanation"]
+            }
           : questionType === "word_scramble"
             ? {
               type: "object",

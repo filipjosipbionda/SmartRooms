@@ -9,8 +9,10 @@ import com.benza.smartrooms.data.room.model.Room
 import com.benza.smartrooms.data.room.model.RoomAnnouncement
 import com.benza.smartrooms.data.room.model.RoomAnnouncementAttachment
 import com.benza.smartrooms.data.room.model.RoomInvitation
+import com.benza.smartrooms.data.room.model.RoomMember
 import com.benza.smartrooms.data.room.model.RoomOperationResult
 import com.benza.smartrooms.data.room.model.RoomQuiz
+import com.benza.smartrooms.data.room.model.RoomQuizLeaderboardStudent
 import com.benza.smartrooms.data.room.model.RoomQuizQuestion
 import com.benza.smartrooms.data.room.model.RoomQuizResult
 import com.benza.smartrooms.data.room.model.RoomQuizSummary
@@ -122,6 +124,27 @@ internal class FirestoreRoomRepository(
         roomDataSource
             .observeQuizResults(userId, roomId)
             .map { RoomOperationResult.Success(it) as RoomOperationResult<List<RoomQuizResult>> }
+            .catch { emit(RoomOperationResult.Error(it.toRoomErrorRes(), it.toDebugMessage())) }
+            .flowOn(Dispatchers.IO)
+
+    override fun observeQuizLeaderboardStudents(
+        roomId: String,
+        memberIds: List<String>,
+    ): Flow<RoomOperationResult<List<RoomQuizLeaderboardStudent>>> =
+        roomDataSource
+            .observeQuizLeaderboardStudents(roomId, memberIds)
+            .map { RoomOperationResult.Success(it) as RoomOperationResult<List<RoomQuizLeaderboardStudent>> }
+            .catch { emit(RoomOperationResult.Error(it.toRoomErrorRes(), it.toDebugMessage())) }
+            .flowOn(Dispatchers.IO)
+
+    override fun observeRoomMembers(
+        ownerId: String,
+        memberIds: List<String>,
+        collaboratorIds: List<String>,
+    ): Flow<RoomOperationResult<List<RoomMember>>> =
+        roomDataSource
+            .observeRoomMembers(ownerId, memberIds, collaboratorIds)
+            .map { RoomOperationResult.Success(it) as RoomOperationResult<List<RoomMember>> }
             .catch { emit(RoomOperationResult.Error(it.toRoomErrorRes(), it.toDebugMessage())) }
             .flowOn(Dispatchers.IO)
 
@@ -315,6 +338,19 @@ internal class FirestoreRoomRepository(
             )
         }
 
+    override suspend fun removeRoomMember(
+        roomId: String,
+        targetUserId: String,
+    ): RoomOperationResult<Unit> =
+        withContext(Dispatchers.IO) {
+            runCatching {
+                functionsRoomDataSource.removeRoomMember(roomId, targetUserId)
+            }.fold(
+                onSuccess = { RoomOperationResult.Success(Unit) },
+                onFailure = { RoomOperationResult.Error(it.toRoomMemberRemoveErrorRes(), it.toDebugMessage()) },
+            )
+        }
+
     /**
      * Triggers backend quiz generation through a callable Cloud Function.
      */
@@ -482,6 +518,20 @@ private fun Throwable.toRoomInvitationResolveErrorRes(): Int =
                 FirebaseFunctionsException.Code.PERMISSION_DENIED -> R.string.error_room_invitation_permission
                 FirebaseFunctionsException.Code.FAILED_PRECONDITION -> R.string.error_room_invitation_unavailable
                 else -> R.string.error_room_invitation_generic
+            }
+
+        else -> toRoomErrorRes()
+    }
+
+private fun Throwable.toRoomMemberRemoveErrorRes(): Int =
+    when (this) {
+        is FirebaseNetworkException -> R.string.error_room_network
+        is FirebaseFunctionsException ->
+            when (code) {
+                FirebaseFunctionsException.Code.NOT_FOUND -> R.string.error_room_member_not_found
+                FirebaseFunctionsException.Code.PERMISSION_DENIED -> R.string.error_room_member_remove_permission
+                FirebaseFunctionsException.Code.FAILED_PRECONDITION -> R.string.error_room_member_remove_unavailable
+                else -> R.string.error_room_member_remove_generic
             }
 
         else -> toRoomErrorRes()

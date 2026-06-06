@@ -189,3 +189,57 @@ export const rejectRoomInvitation = onCall(
     };
   }
 );
+
+export const removeRoomMember = onCall(
+  { cors: true, region: FUNCTIONS_REGION },
+  async (request) => {
+    if (!request.auth) {
+      throw new HttpsError("unauthenticated", "Authentication is required.");
+    }
+
+    const roomId = readRequiredString(request.data.roomId, "roomId");
+    const targetUserId = readRequiredString(request.data.targetUserId, "targetUserId");
+
+    await db.runTransaction(async (transaction) => {
+      const roomRef = db.collection(ROOMS_COLLECTION).doc(roomId);
+      const roomSnapshot = await transaction.get(roomRef);
+      if (!roomSnapshot.exists) {
+        throw new HttpsError("not-found", "Room was not found.");
+      }
+
+      const room = roomSnapshot.data() as RoomDocument;
+      const memberIds = Array.isArray(room.memberIds) ? room.memberIds : [];
+      const collaboratorIds = Array.isArray(room.collaboratorIds) ? room.collaboratorIds : [];
+      const requesterId = request.auth!.uid;
+      const canManageRoom = room.ownerId === requesterId || collaboratorIds.includes(requesterId);
+
+      if (!canManageRoom) {
+        throw new HttpsError("permission-denied", "Only the room owner or a collaborator can remove members.");
+      }
+      if (targetUserId === room.ownerId) {
+        throw new HttpsError("failed-precondition", "The room owner cannot be removed.");
+      }
+      if (targetUserId === requesterId) {
+        throw new HttpsError("failed-precondition", "You cannot remove yourself from the room.");
+      }
+
+      const isMember = memberIds.includes(targetUserId);
+      const isCollaborator = collaboratorIds.includes(targetUserId);
+      if (!isMember && !isCollaborator) {
+        throw new HttpsError("not-found", "The selected user is not in this room.");
+      }
+
+      transaction.update(roomRef, {
+        memberIds: FieldValue.arrayRemove(targetUserId),
+        collaboratorIds: FieldValue.arrayRemove(targetUserId),
+        ...(isMember ? { participantCount: FieldValue.increment(-1) } : {})
+      });
+    });
+
+    return {
+      ok: true,
+      roomId,
+      targetUserId
+    };
+  }
+);

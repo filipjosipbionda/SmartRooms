@@ -65,6 +65,9 @@ export function normalizeQuestionType(value: unknown): QuestionType {
   if (value === "fill_in_blank") {
     return "fill_in_blank";
   }
+  if (value === "mixed") {
+    return "mixed";
+  }
   if (value === "word_scramble") {
     return "word_scramble";
   }

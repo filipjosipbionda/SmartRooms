@@ -8,8 +8,10 @@ import com.benza.smartrooms.data.room.model.Room
 import com.benza.smartrooms.data.room.model.RoomAnnouncement
 import com.benza.smartrooms.data.room.model.RoomAnnouncementAttachment
 import com.benza.smartrooms.data.room.model.RoomInvitation
+import com.benza.smartrooms.data.room.model.RoomMember
 import com.benza.smartrooms.data.room.model.RoomOperationResult
 import com.benza.smartrooms.data.room.model.RoomQuiz
+import com.benza.smartrooms.data.room.model.RoomQuizLeaderboardStudent
 import com.benza.smartrooms.data.room.model.RoomQuizQuestion
 import com.benza.smartrooms.data.room.model.RoomQuizResult
 import com.benza.smartrooms.data.room.model.RoomQuizSummary
@@ -68,6 +70,17 @@ internal interface RoomRepository {
         roomId: String,
     ): Flow<RoomOperationResult<List<RoomQuizResult>>>
 
+    fun observeQuizLeaderboardStudents(
+        roomId: String,
+        memberIds: List<String>,
+    ): Flow<RoomOperationResult<List<RoomQuizLeaderboardStudent>>>
+
+    fun observeRoomMembers(
+        ownerId: String,
+        memberIds: List<String>,
+        collaboratorIds: List<String>,
+    ): Flow<RoomOperationResult<List<RoomMember>>>
+
     suspend fun saveQuizResult(result: RoomQuizResult): RoomOperationResult<Unit>
 
     /**
@@ -121,6 +134,14 @@ internal interface RoomRepository {
      * Rejects a pending invitation.
      */
     suspend fun rejectRoomInvitation(invitationId: String): RoomOperationResult<Unit>
+
+    /**
+     * Removes one non-owner user from the selected room.
+     */
+    suspend fun removeRoomMember(
+        roomId: String,
+        targetUserId: String,
+    ): RoomOperationResult<Unit>
 
     /**
      * Triggers backend quiz generation for the supplied room.

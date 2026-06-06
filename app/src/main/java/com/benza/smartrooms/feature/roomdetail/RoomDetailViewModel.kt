@@ -10,7 +10,11 @@ import com.benza.smartrooms.data.room.model.QuestionType
 import com.benza.smartrooms.data.room.model.RoomAnnouncement
 import com.benza.smartrooms.data.room.model.RoomAnnouncementAttachment
 import com.benza.smartrooms.data.room.model.RoomInvitationAccess
+import com.benza.smartrooms.data.room.model.RoomMember
+import com.benza.smartrooms.data.room.model.RoomMemberAccountRole
+import com.benza.smartrooms.data.room.model.RoomMemberRole
 import com.benza.smartrooms.data.room.model.RoomOperationResult
+import com.benza.smartrooms.data.room.model.RoomQuizLeaderboardStudent
 import com.benza.smartrooms.data.room.model.RoomQuizResult
 import com.benza.smartrooms.data.room.model.RoomQuizStatus
 import com.benza.smartrooms.data.room.model.RoomQuizSummary
@@ -37,6 +41,30 @@ internal data class RoomAnnouncementCardUiState(
     val canManage: Boolean,
 )
 
+internal data class RoomQuizLeaderboardRowUiState(
+    val userId: String,
+    val rank: Int,
+    val displayName: String,
+    val email: String,
+    val photoUrl: String?,
+    val solvedQuizCount: Int,
+    val totalQuizCount: Int,
+    val score: Int,
+    val maxScore: Int,
+    val isComplete: Boolean,
+)
+
+internal data class RoomMemberUiState(
+    val userId: String,
+    val displayName: String,
+    val email: String,
+    val photoUrl: String?,
+    val roomRole: RoomMemberRole,
+    val accountRole: RoomMemberAccountRole?,
+    val isProfileLoaded: Boolean,
+    val canKick: Boolean,
+)
+
 internal data class RoomDetailUiState(
     val roomId: String,
     val roomName: String,
@@ -51,6 +79,11 @@ internal data class RoomDetailUiState(
     val announcements: List<RoomAnnouncementCardUiState> = emptyList(),
     val quizzes: List<RoomQuizSummary> = emptyList(),
     val quizResultsByQuizId: Map<String, RoomQuizResult> = emptyMap(),
+    val quizLeaderboardRows: List<RoomQuizLeaderboardRowUiState> = emptyList(),
+    val quizLeaderboardTotalQuizCount: Int = 0,
+    val members: List<RoomMemberUiState> = emptyList(),
+    val isLoadingQuizLeaderboard: Boolean = false,
+    val isLoadingMembers: Boolean = true,
     val isLoadingRoom: Boolean = true,
     val isLoadingFeed: Boolean = true,
     val isLoadingQuizzes: Boolean = true,
@@ -62,6 +95,8 @@ internal data class RoomDetailUiState(
     val isSendingInvite: Boolean = false,
     val pendingAnnouncementDeletion: PendingAnnouncementDeletion? = null,
     val isDeletingAnnouncement: Boolean = false,
+    val pendingMemberRemoval: PendingMemberRemoval? = null,
+    val removingMemberUserId: String? = null,
     val errorMessageRes: Int? = null,
     val infoMessageRes: Int? = null,
 ) {
@@ -70,6 +105,9 @@ internal data class RoomDetailUiState(
 
     val canManagePosts: Boolean
         get() = currentUserRole == UserRole.TEACHER
+
+    val canManageMembers: Boolean
+        get() = isCurrentUserOwner || isCurrentUserCollaborator
 }
 
 internal data class InviteUserUiState(
@@ -86,6 +124,17 @@ internal data class PendingAnnouncementDeletion(
     val attachments: List<RoomAnnouncementAttachment>,
 )
 
+internal data class PendingMemberRemoval(
+    val userId: String,
+    val displayName: String,
+)
+
+private data class ObservedRoomMembersKey(
+    val ownerId: String,
+    val memberIds: List<String>,
+    val collaboratorIds: List<String>,
+)
+
 internal class RoomDetailViewModel(
     roomId: String,
     roomName: String,
@@ -98,15 +147,25 @@ internal class RoomDetailViewModel(
     private val currentUser = authRepository.getCurrentUser()
     private val currentUserId = currentUser?.uid.orEmpty()
     private var inviteSearchJob: Job? = null
+    private var leaderboardJob: Job? = null
+    private var membersJob: Job? = null
+    private var observedLeaderboardMemberIds: List<String> = emptyList()
+    private var observedMembersKey: ObservedRoomMembersKey? = null
     private var latestQuizzes: List<RoomQuizSummary> = emptyList()
     private var latestQuizResultsByQuizId: Map<String, RoomQuizResult> = emptyMap()
+    private var latestLeaderboardStudents: List<RoomQuizLeaderboardStudent> = emptyList()
+    private var latestMembers: List<RoomMember> = emptyList()
     private var latestAnnouncements: List<RoomAnnouncement> = emptyList()
     private var areQuizzesLoaded = false
+    private var isLeaderboardLoaded = false
+    private var areMembersLoaded = false
     private var areAnnouncementsLoaded = false
     private var roomErrorMessageRes: Int? = null
     private var profileErrorMessageRes: Int? = null
     private var quizzesErrorMessageRes: Int? = null
     private var quizResultsErrorMessageRes: Int? = null
+    private var quizLeaderboardErrorMessageRes: Int? = null
+    private var membersErrorMessageRes: Int? = null
     private var announcementsErrorMessageRes: Int? = null
 
     private val _uiState =
@@ -195,6 +254,74 @@ internal class RoomDetailViewModel(
                         it.copy(
                             pendingAnnouncementDeletion = null,
                             isDeletingAnnouncement = false,
+                            errorMessageRes = result.messageRes,
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    internal fun requestMemberRemoval(member: RoomMemberUiState) {
+        if (!member.canKick) return
+
+        _uiState.update {
+            it.copy(
+                pendingMemberRemoval =
+                    PendingMemberRemoval(
+                        userId = member.userId,
+                        displayName = member.displayName,
+                    ),
+                errorMessageRes = null,
+                infoMessageRes = null,
+            )
+        }
+    }
+
+    internal fun dismissMemberRemoval() {
+        if (_uiState.value.removingMemberUserId != null) return
+        _uiState.update { it.copy(pendingMemberRemoval = null) }
+    }
+
+    internal fun removePendingMember() {
+        currentUser ?: run {
+            _uiState.update { it.copy(errorMessageRes = R.string.error_room_auth_required) }
+            return
+        }
+        val pendingRemoval = _uiState.value.pendingMemberRemoval ?: return
+        if (_uiState.value.removingMemberUserId != null) return
+
+        _uiState.update {
+            it.copy(
+                removingMemberUserId = pendingRemoval.userId,
+                errorMessageRes = null,
+                infoMessageRes = null,
+            )
+        }
+
+        viewModelScope.launch {
+            when (
+                val result =
+                    roomRepository.removeRoomMember(
+                        roomId = _uiState.value.roomId,
+                        targetUserId = pendingRemoval.userId,
+                    )
+            ) {
+                is RoomOperationResult.Success -> {
+                    _uiState.update {
+                        it.copy(
+                            pendingMemberRemoval = null,
+                            removingMemberUserId = null,
+                            infoMessageRes = R.string.room_member_removed,
+                        )
+                    }
+                }
+
+                is RoomOperationResult.Error -> {
+                    _uiState.update {
+                        it.copy(
+                            pendingMemberRemoval = null,
+                            removingMemberUserId = null,
                             errorMessageRes = result.messageRes,
                         )
                     }
@@ -420,6 +547,103 @@ internal class RoomDetailViewModel(
         }
     }
 
+    private fun refreshLeaderboardObserver() {
+        val state = _uiState.value
+        if (state.memberIds.isEmpty()) {
+            leaderboardJob?.cancel()
+            leaderboardJob = null
+            observedLeaderboardMemberIds = emptyList()
+            latestLeaderboardStudents = emptyList()
+            isLeaderboardLoaded = true
+            quizLeaderboardErrorMessageRes = null
+            publishQuizState()
+            return
+        }
+
+        val memberIds = state.memberIds.distinct().filter(String::isNotBlank)
+        if (leaderboardJob != null && observedLeaderboardMemberIds == memberIds) return
+
+        leaderboardJob?.cancel()
+        observedLeaderboardMemberIds = memberIds
+        latestLeaderboardStudents = emptyList()
+        isLeaderboardLoaded = false
+        quizLeaderboardErrorMessageRes = null
+        publishQuizState()
+
+        leaderboardJob =
+            viewModelScope.launch {
+                roomRepository.observeQuizLeaderboardStudents(state.roomId, memberIds).collect { result ->
+                    when (result) {
+                        is RoomOperationResult.Success -> {
+                            latestLeaderboardStudents = result.data
+                            isLeaderboardLoaded = true
+                            quizLeaderboardErrorMessageRes = null
+                            publishQuizState()
+                        }
+
+                        is RoomOperationResult.Error -> {
+                            isLeaderboardLoaded = true
+                            quizLeaderboardErrorMessageRes = result.messageRes
+                            publishQuizState()
+                        }
+                    }
+                }
+            }
+    }
+
+    private fun refreshMembersObserver() {
+        val state = _uiState.value
+        val nextKey =
+            ObservedRoomMembersKey(
+                ownerId = state.ownerId,
+                memberIds = state.memberIds.distinct().filter(String::isNotBlank),
+                collaboratorIds = state.collaboratorIds.distinct().filter(String::isNotBlank),
+            )
+        if (nextKey.ownerId.isBlank() && nextKey.memberIds.isEmpty() && nextKey.collaboratorIds.isEmpty()) {
+            membersJob?.cancel()
+            membersJob = null
+            observedMembersKey = null
+            latestMembers = emptyList()
+            areMembersLoaded = true
+            membersErrorMessageRes = null
+            publishMembersState()
+            return
+        }
+        if (membersJob != null && observedMembersKey == nextKey) return
+
+        membersJob?.cancel()
+        observedMembersKey = nextKey
+        latestMembers = emptyList()
+        areMembersLoaded = false
+        membersErrorMessageRes = null
+        publishMembersState()
+
+        membersJob =
+            viewModelScope.launch {
+                roomRepository
+                    .observeRoomMembers(
+                        ownerId = nextKey.ownerId,
+                        memberIds = nextKey.memberIds,
+                        collaboratorIds = nextKey.collaboratorIds,
+                    ).collect { result ->
+                        when (result) {
+                            is RoomOperationResult.Success -> {
+                                latestMembers = result.data
+                                areMembersLoaded = true
+                                membersErrorMessageRes = null
+                                publishMembersState()
+                            }
+
+                            is RoomOperationResult.Error -> {
+                                areMembersLoaded = true
+                                membersErrorMessageRes = result.messageRes
+                                publishMembersState()
+                            }
+                        }
+                    }
+            }
+    }
+
     private fun publishAnnouncementState() {
         _uiState.update { state ->
             state.copy(
@@ -439,11 +663,30 @@ internal class RoomDetailViewModel(
 
     private fun publishQuizState() {
         _uiState.update { state ->
+            val visibleQuizzes = buildVisibleQuizzes(latestQuizzes)
             state.copy(
-                quizzes =
-                    buildVisibleQuizzes(latestQuizzes),
+                quizzes = visibleQuizzes,
                 quizResultsByQuizId = latestQuizResultsByQuizId,
+                quizLeaderboardRows = buildLeaderboardRows(latestLeaderboardStudents, visibleQuizzes),
+                quizLeaderboardTotalQuizCount = visibleQuizzes.size,
+                isLoadingQuizLeaderboard = state.memberIds.isNotEmpty() && !isLeaderboardLoaded,
                 isLoadingQuizzes = !areQuizzesLoaded,
+                errorMessageRes = currentDataError(),
+            )
+        }
+    }
+
+    private fun publishMembersState() {
+        _uiState.update { state ->
+            state.copy(
+                members =
+                    latestMembers.map { member ->
+                        member.toRoomMemberUiState(
+                            currentUserId = currentUserId,
+                            canCurrentUserManageMembers = state.canManageMembers,
+                        )
+                    },
+                isLoadingMembers = !areMembersLoaded,
                 errorMessageRes = currentDataError(),
             )
         }
@@ -470,6 +713,8 @@ internal class RoomDetailViewModel(
                             )
                         }
                         publishQuizState()
+                        refreshLeaderboardObserver()
+                        refreshMembersObserver()
                     }
 
                     is RoomOperationResult.Error -> {
@@ -501,6 +746,8 @@ internal class RoomDetailViewModel(
                             )
                         }
                         publishAnnouncementState()
+                        refreshLeaderboardObserver()
+                        publishMembersState()
                     }
 
                     is UserProfileOperationResult.Error -> {
@@ -512,6 +759,8 @@ internal class RoomDetailViewModel(
                             )
                         }
                         publishAnnouncementState()
+                        refreshLeaderboardObserver()
+                        publishMembersState()
                     }
                 }
             }
@@ -520,7 +769,7 @@ internal class RoomDetailViewModel(
 
     private fun currentDataError(): Int? =
         roomErrorMessageRes ?: profileErrorMessageRes ?: announcementsErrorMessageRes ?: quizzesErrorMessageRes
-            ?: quizResultsErrorMessageRes
+            ?: quizResultsErrorMessageRes ?: quizLeaderboardErrorMessageRes ?: membersErrorMessageRes
 }
 
 private fun RoomAnnouncement.toAnnouncementCardUiState(
@@ -537,12 +786,60 @@ private fun RoomAnnouncement.toAnnouncementCardUiState(
         canManage = canCurrentUserManagePosts && authorId == currentUserId,
     )
 
+private fun RoomMember.toRoomMemberUiState(
+    currentUserId: String,
+    canCurrentUserManageMembers: Boolean,
+): RoomMemberUiState =
+    RoomMemberUiState(
+        userId = userId,
+        displayName = displayName,
+        email = email,
+        photoUrl = photoUrl,
+        roomRole = roomRole,
+        accountRole = accountRole,
+        isProfileLoaded = isProfileLoaded,
+        canKick = canCurrentUserManageMembers && userId != currentUserId && roomRole != RoomMemberRole.OWNER,
+    )
+
 private fun buildVisibleQuizzes(quizzes: List<RoomQuizSummary>): List<RoomQuizSummary> =
     quizzes
         .asSequence()
         .filter { quiz -> quiz.status == RoomQuizStatus.READY }
         .sortedByDescending(RoomQuizSummary::createdAtEpochMillis)
         .toList()
+
+private fun buildLeaderboardRows(
+    students: List<RoomQuizLeaderboardStudent>,
+    quizzes: List<RoomQuizSummary>,
+): List<RoomQuizLeaderboardRowUiState> {
+    val quizIds = quizzes.map(RoomQuizSummary::id).toSet()
+    val totalQuizCount = quizIds.size
+    val totalMaxScore = quizzes.sumOf(RoomQuizSummary::maxScore)
+
+    return students
+        .map { student ->
+            val resultsByQuizId =
+                student.results
+                    .filter { result -> result.quizId in quizIds }
+                    .associateBy(RoomQuizResult::quizId)
+            RoomQuizLeaderboardRowUiState(
+                userId = student.userId,
+                rank = 0,
+                displayName = student.displayName,
+                email = student.email,
+                photoUrl = student.photoUrl,
+                solvedQuizCount = resultsByQuizId.size,
+                totalQuizCount = totalQuizCount,
+                score = resultsByQuizId.values.sumOf(RoomQuizResult::score),
+                maxScore = totalMaxScore,
+                isComplete = totalQuizCount > 0 && resultsByQuizId.size == totalQuizCount,
+            )
+        }.sortedWith(
+            compareByDescending<RoomQuizLeaderboardRowUiState> { it.score }
+                .thenByDescending { it.solvedQuizCount }
+                .thenBy { it.displayName.lowercase() },
+        ).mapIndexed { index, row -> row.copy(rank = index + 1) }
+}
 
 private fun AuthUser.displayNameOrEmailName(): String =
     displayName
@@ -569,6 +866,7 @@ internal fun labelRes(questionType: QuestionType): Int =
     when (questionType) {
         QuestionType.MULTIPLE_CHOICE -> R.string.room_detail_type_multiple_choice
         QuestionType.FILL_IN_BLANK -> R.string.room_detail_type_fill_in_blank
+        QuestionType.MIXED -> R.string.room_detail_type_mixed
         QuestionType.WORD_SCRAMBLE -> R.string.room_detail_type_word_scramble
     }
 

@@ -3,6 +3,8 @@ package com.benza.smartrooms.feature.roomquizbuilder
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.benza.smartrooms.R
+import com.benza.smartrooms.data.knowledge.KnowledgeCatalog
+import com.benza.smartrooms.data.knowledge.KnowledgeCatalogItem
 import com.benza.smartrooms.data.room.model.GenerateQuizRequest
 import com.benza.smartrooms.data.room.model.QuestionType
 import com.benza.smartrooms.data.room.model.QuizKind
@@ -22,6 +24,8 @@ internal data class RoomQuizBuilderUiState(
     val roomName: String,
     val roomTopic: String,
     val selectedQuizKind: QuizKind = QuizKind.GRAMMAR,
+    val catalogItems: List<KnowledgeCatalogItem> = emptyList(),
+    val selectedCatalogItemIds: Set<String> = emptySet(),
     val titleInput: String = "",
     val topicInput: String,
     val vocabularyWordsInput: String = "",
@@ -49,6 +53,9 @@ internal data class RoomQuizBuilderUiState(
 ) {
     val isSelectionMode: Boolean
         get() = selectedQuizIds.isNotEmpty()
+
+    val selectedCatalogItems: List<KnowledgeCatalogItem>
+        get() = catalogItems.filter { it.id in selectedCatalogItemIds }
 }
 
 internal data class PendingQuizDeletion(
@@ -263,6 +270,7 @@ internal class RoomQuizBuilderViewModel(
         _uiState.update {
             it.copy(
                 topicInput = value,
+                selectedCatalogItemIds = emptySet(),
                 topicErrorRes = null,
                 vocabularyWordsErrorRes = null,
                 errorMessageRes = null,
@@ -284,10 +292,34 @@ internal class RoomQuizBuilderViewModel(
         }
     }
 
+    internal fun onCatalogItemsSelected(itemIds: Set<String>) {
+        _uiState.update { state ->
+            val items =
+                itemIds
+                    .mapNotNull(KnowledgeCatalog::itemById)
+                    .filter { item -> item.matches(state.cefrLevel, state.selectedQuizKind) }
+            state.withSelectedCatalogItems(items)
+        }
+    }
+
     internal fun onQuizKindSelected(value: QuizKind) {
-        _uiState.update {
-            it.copy(
+        _uiState.update { state ->
+            if (state.selectedQuizKind == value) return@update state
+
+            val catalogItems = KnowledgeCatalog.itemsFor(state.cefrLevel, value)
+            state.copy(
                 selectedQuizKind = value,
+                catalogItems = catalogItems,
+                selectedCatalogItemIds = emptySet(),
+                topicInput = if (value == QuizKind.GRAMMAR) state.roomTopic else "",
+                vocabularyWordsInput = "",
+                questionCountInput = DEFAULT_QUESTION_COUNT.toString(),
+                selectedQuestionType =
+                    if (value == QuizKind.VOCABULARY) {
+                        QuestionType.WORD_SCRAMBLE
+                    } else {
+                        QuestionType.MULTIPLE_CHOICE
+                    },
                 topicErrorRes = null,
                 vocabularyWordsErrorRes = null,
                 questionCountErrorRes = null,
@@ -297,6 +329,53 @@ internal class RoomQuizBuilderViewModel(
             )
         }
     }
+
+    private fun RoomQuizBuilderUiState.withSelectedCatalogItems(
+        items: List<KnowledgeCatalogItem>,
+    ): RoomQuizBuilderUiState {
+        val orderedItems = catalogItems.filter { catalogItem -> items.any { it.id == catalogItem.id } }
+        val combinedTitle = orderedItems.joinToString(separator = ", ", transform = KnowledgeCatalogItem::title)
+        val previousCatalogTitle =
+            selectedCatalogItems.joinToString(separator = ", ", transform = KnowledgeCatalogItem::title)
+        val suggestedVocabularyInput =
+            orderedItems
+                .flatMap(KnowledgeCatalogItem::suggestedVocabularyWords)
+                .distinct()
+                .joinToString(separator = "\n")
+        return copy(
+            selectedCatalogItemIds = orderedItems.map(KnowledgeCatalogItem::id).toSet(),
+            titleInput =
+                if (titleInput.isBlank() || titleInput == previousCatalogTitle) {
+                    combinedTitle
+                } else {
+                    titleInput
+                },
+            topicInput =
+                if (selectedQuizKind == QuizKind.GRAMMAR) {
+                    orderedItems.joinToString(separator = "; ", transform = KnowledgeCatalogItem::title)
+                } else {
+                    topicInput
+                },
+            vocabularyWordsInput =
+                if (selectedQuizKind == QuizKind.VOCABULARY) {
+                    suggestedVocabularyInput
+                } else {
+                    vocabularyWordsInput
+                },
+            topicErrorRes = null,
+            vocabularyWordsErrorRes = null,
+            errorMessageRes = null,
+            errorMessageText = null,
+            infoMessageRes = null,
+        )
+    }
+
+    private fun KnowledgeCatalogItem.matches(
+        cefrLevel: String,
+        quizKind: QuizKind,
+    ): Boolean =
+        this.quizKind == quizKind &&
+            this.cefrLevel.equals(cefrLevel.trim(), ignoreCase = true)
 
     internal fun generateQuiz() {
         if (_uiState.value.isGeneratingQuiz) return
@@ -378,6 +457,16 @@ internal class RoomQuizBuilderViewModel(
                     _uiState.update {
                         it.copy(
                             questionCountErrorRes = R.string.error_quiz_question_count_invalid,
+                            errorMessageRes = R.string.error_quiz_generation_fix_fields,
+                            errorMessageText = null,
+                        )
+                    }
+                    return
+                }
+                if (state.selectedQuestionType == QuestionType.MIXED && questionCount < MIN_MIXED_QUESTION_COUNT) {
+                    _uiState.update {
+                        it.copy(
+                            questionCountErrorRes = R.string.error_quiz_mixed_question_count_invalid,
                             errorMessageRes = R.string.error_quiz_generation_fix_fields,
                             errorMessageText = null,
                         )
@@ -637,11 +726,18 @@ internal class RoomQuizBuilderViewModel(
             roomRepository.observeRoom(_uiState.value.roomId).collect { result ->
                 when (result) {
                     is RoomOperationResult.Success -> {
-                        _uiState.update {
-                            it.copy(
+                        _uiState.update { state ->
+                            val catalogItems = KnowledgeCatalog.itemsFor(result.data.cefrLevel, state.selectedQuizKind)
+                            val availableCatalogItemIds = catalogItems.map(KnowledgeCatalogItem::id).toSet()
+                            state.copy(
                                 roomName = result.data.name,
                                 roomTopic = result.data.topic,
                                 cefrLevel = result.data.cefrLevel,
+                                catalogItems = catalogItems,
+                                selectedCatalogItemIds =
+                                    state.selectedCatalogItemIds.intersect(
+                                        availableCatalogItemIds,
+                                    ),
                             )
                         }
                     }
@@ -690,6 +786,7 @@ private fun RoomQuizSummary.canBeDeleted(): Boolean = status != RoomQuizStatus.G
 
 private const val DEFAULT_QUESTION_COUNT = 5
 private const val MIN_QUESTION_COUNT = 1
+private const val MIN_MIXED_QUESTION_COUNT = 2
 private const val MAX_AI_QUESTION_COUNT = 50
 private const val MAX_QUESTION_TIME_LIMIT_SECONDS = 3600
 

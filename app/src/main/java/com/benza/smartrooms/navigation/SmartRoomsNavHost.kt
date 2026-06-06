@@ -1,6 +1,7 @@
 package com.benza.smartrooms.navigation
 
 import androidx.compose.runtime.Composable
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -13,6 +14,7 @@ import com.benza.smartrooms.feature.createpost.CreatePostRouteScreen
 import com.benza.smartrooms.feature.createpost.PostDetailRouteScreen
 import com.benza.smartrooms.feature.createroom.CreateRoomRouteScreen
 import com.benza.smartrooms.feature.home.HomeRouteScreen
+import com.benza.smartrooms.feature.knowledgecatalog.KnowledgeCatalogRouteScreen
 import com.benza.smartrooms.feature.profile.ProfileRouteScreen
 import com.benza.smartrooms.feature.roomdetail.RoomDetailRouteScreen
 import com.benza.smartrooms.feature.roominvite.RoomInviteRouteScreen
@@ -205,11 +207,28 @@ internal fun SmartRoomsNavHost(
 
         composable<RoomQuizBuilderRoute> { backStackEntry ->
             val route = backStackEntry.toRoute<RoomQuizBuilderRoute>()
+            val selectedCatalogItemIds =
+                backStackEntry.savedStateHandle
+                    .getStateFlow(SELECTED_CATALOG_ITEMS_RESULT, "")
+                    .collectAsStateWithLifecycle()
             RoomQuizBuilderRouteScreen(
                 roomId = route.roomId,
                 roomName = route.roomName,
                 roomTopic = route.roomTopic,
+                selectedCatalogItemIds = selectedCatalogItemIds.value,
                 onBackClick = { navController.popBackStack() },
+                onCatalogItemsResultConsumed = {
+                    backStackEntry.savedStateHandle.remove<String>(SELECTED_CATALOG_ITEMS_RESULT)
+                },
+                onOpenCatalogClick = { cefrLevel, quizKind, selectedItemIds ->
+                    navController.navigate(
+                        KnowledgeCatalogRoute(
+                            cefrLevel = cefrLevel,
+                            quizKind = quizKind,
+                            selectedCatalogItemIds = selectedItemIds,
+                        ),
+                    )
+                },
                 onOpenReviewClick = { quizId ->
                     navController.navigate(
                         RoomQuizReviewRoute(
@@ -227,6 +246,22 @@ internal fun SmartRoomsNavHost(
                             quizId = quizId,
                         ),
                     )
+                },
+            )
+        }
+
+        composable<KnowledgeCatalogRoute> { backStackEntry ->
+            val route = backStackEntry.toRoute<KnowledgeCatalogRoute>()
+            KnowledgeCatalogRouteScreen(
+                cefrLevel = route.cefrLevel,
+                quizKindValue = route.quizKind,
+                selectedCatalogItemIds = route.selectedCatalogItemIds,
+                onBackClick = { navController.popBackStack() },
+                onCatalogItemsSelected = { itemIds ->
+                    navController.previousBackStackEntry
+                        ?.savedStateHandle
+                        ?.set(SELECTED_CATALOG_ITEMS_RESULT, itemIds)
+                    navController.popBackStack()
                 },
             )
         }
@@ -252,3 +287,5 @@ internal fun SmartRoomsNavHost(
         }
     }
 }
+
+private const val SELECTED_CATALOG_ITEMS_RESULT = "selectedCatalogItemIds"

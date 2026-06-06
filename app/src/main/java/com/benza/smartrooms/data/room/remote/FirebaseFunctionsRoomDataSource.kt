@@ -90,12 +90,30 @@ internal class FirebaseFunctionsRoomDataSource(
             .call(mapOf(INVITATION_ID_FIELD to invitationId))
             .await()
     }
+
+    /**
+     * Calls the backend function that removes one user from the selected room.
+     */
+    internal suspend fun removeRoomMember(
+        roomId: String,
+        targetUserId: String,
+    ) {
+        functions
+            .getHttpsCallable(REMOVE_ROOM_MEMBER_FUNCTION)
+            .call(
+                mapOf(
+                    ROOM_ID_FIELD to roomId,
+                    TARGET_USER_ID_FIELD to targetUserId,
+                ),
+            ).await()
+    }
 }
 
 private fun QuestionType.toBackendValue(): String =
     when (this) {
         QuestionType.MULTIPLE_CHOICE -> "multiple_choice"
         QuestionType.FILL_IN_BLANK -> "fill_in_blank"
+        QuestionType.MIXED -> "mixed"
         QuestionType.WORD_SCRAMBLE -> "word_scramble"
     }
 
@@ -123,12 +141,14 @@ private const val RETRY_QUIZ_FUNCTION = "retryQuizForRoom"
 private const val SEND_ROOM_INVITATION_FUNCTION = "sendRoomInvitation"
 private const val ACCEPT_ROOM_INVITATION_FUNCTION = "acceptRoomInvitation"
 private const val REJECT_ROOM_INVITATION_FUNCTION = "rejectRoomInvitation"
+private const val REMOVE_ROOM_MEMBER_FUNCTION = "removeRoomMember"
 private const val CLIENT_REQUEST_ID_FIELD = "clientRequestId"
 private const val ROOM_ID_FIELD = "roomId"
 private const val QUIZ_ID_FIELD = "quizId"
 private const val QUIZ_TITLE_FIELD = "title"
 private const val INVITEE_ID_FIELD = "inviteeId"
 private const val INVITATION_ID_FIELD = "invitationId"
+private const val TARGET_USER_ID_FIELD = "targetUserId"
 private const val QUIZ_KIND_FIELD = "quizKind"
 private const val QUIZ_TOPIC_FIELD = "topic"
 private const val VOCABULARY_WORDS_FIELD = "vocabularyWords"
