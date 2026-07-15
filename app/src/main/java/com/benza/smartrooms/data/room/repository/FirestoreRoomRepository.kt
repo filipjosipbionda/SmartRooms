@@ -2,12 +2,14 @@ package com.benza.smartrooms.data.room.repository
 
 import com.benza.smartrooms.R
 import com.benza.smartrooms.data.room.model.CreateAnnouncementRequest
+import com.benza.smartrooms.data.room.model.CreateRoomCommentRequest
 import com.benza.smartrooms.data.room.model.CreateRoomInvitationRequest
 import com.benza.smartrooms.data.room.model.CreateRoomRequest
 import com.benza.smartrooms.data.room.model.GenerateQuizRequest
 import com.benza.smartrooms.data.room.model.Room
 import com.benza.smartrooms.data.room.model.RoomAnnouncement
 import com.benza.smartrooms.data.room.model.RoomAnnouncementAttachment
+import com.benza.smartrooms.data.room.model.RoomComment
 import com.benza.smartrooms.data.room.model.RoomInvitation
 import com.benza.smartrooms.data.room.model.RoomMember
 import com.benza.smartrooms.data.room.model.RoomOperationResult
@@ -187,6 +189,16 @@ internal class FirestoreRoomRepository(
             )
         }
 
+    override fun observeAnnouncementComments(
+        roomId: String,
+        announcementId: String,
+    ): Flow<RoomOperationResult<List<RoomComment>>> =
+        roomDataSource
+            .observeAnnouncementComments(roomId, announcementId)
+            .map { RoomOperationResult.Success(it) as RoomOperationResult<List<RoomComment>> }
+            .catch { emit(RoomOperationResult.Error(it.toRoomErrorRes(), it.toDebugMessage())) }
+            .flowOn(Dispatchers.IO)
+
     /**
      * Creates a room document in Firestore.
      */
@@ -237,6 +249,16 @@ internal class FirestoreRoomRepository(
                     )
                     throw exception
                 }
+            }.fold(
+                onSuccess = { RoomOperationResult.Success(Unit) },
+                onFailure = { RoomOperationResult.Error(it.toRoomErrorRes(), it.toDebugMessage()) },
+            )
+        }
+
+    override suspend fun createAnnouncementComment(request: CreateRoomCommentRequest): RoomOperationResult<Unit> =
+        withContext(Dispatchers.IO) {
+            runCatching {
+                roomDataSource.createAnnouncementComment(request)
             }.fold(
                 onSuccess = { RoomOperationResult.Success(Unit) },
                 onFailure = { RoomOperationResult.Error(it.toRoomErrorRes(), it.toDebugMessage()) },

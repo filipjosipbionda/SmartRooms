@@ -133,6 +133,7 @@ internal fun RoomDetailRouteScreen(
     onBackClick: () -> Unit,
     onCreatePostClick: () -> Unit,
     onOpenPostClick: (String) -> Unit,
+    onCommentPostClick: (String) -> Unit,
     onEditPostClick: (String) -> Unit,
     onOpenQuizClick: (String) -> Unit,
     onOpenQuizManagerClick: () -> Unit,
@@ -149,6 +150,7 @@ internal fun RoomDetailRouteScreen(
         onBackClick = onBackClick,
         onCreatePostClick = onCreatePostClick,
         onOpenPostClick = onOpenPostClick,
+        onCommentPostClick = onCommentPostClick,
         onEditPostClick = onEditPostClick,
         onOpenQuizClick = onOpenQuizClick,
         onOpenQuizManagerClick = onOpenQuizManagerClick,
@@ -170,6 +172,7 @@ internal fun RoomDetailScreen(
     onBackClick: () -> Unit,
     onCreatePostClick: () -> Unit,
     onOpenPostClick: (String) -> Unit,
+    onCommentPostClick: (String) -> Unit,
     onEditPostClick: (String) -> Unit,
     onOpenQuizClick: (String) -> Unit,
     onOpenQuizManagerClick: () -> Unit,
@@ -277,6 +280,7 @@ internal fun RoomDetailScreen(
                             announcements = uiState.announcements,
                             isLoading = uiState.isLoadingFeed,
                             onOpenAnnouncementClick = onOpenPostClick,
+                            onCommentAnnouncementClick = onCommentPostClick,
                             onEditAnnouncementClick = onEditPostClick,
                             onDeleteAnnouncementClick = onRequestAnnouncementDeletionClick,
                         )
@@ -469,6 +473,7 @@ private fun FeedPage(
     announcements: List<RoomAnnouncementCardUiState>,
     isLoading: Boolean,
     onOpenAnnouncementClick: (String) -> Unit,
+    onCommentAnnouncementClick: (String) -> Unit,
     onEditAnnouncementClick: (String) -> Unit,
     onDeleteAnnouncementClick: (RoomAnnouncementCardUiState) -> Unit,
 ) {
@@ -504,6 +509,7 @@ private fun FeedPage(
                     AnnouncementCard(
                         item = item,
                         onClick = { onOpenAnnouncementClick(item.id) },
+                        onCommentClick = { onCommentAnnouncementClick(item.id) },
                         onEditClick = { onEditAnnouncementClick(item.id) },
                         onDeleteClick = { onDeleteAnnouncementClick(item) },
                     )
@@ -877,85 +883,110 @@ private fun QuizLeaderboardRow(row: RoomQuizLeaderboardRowUiState) {
     Surface(
         modifier = Modifier.fillMaxWidth(),
         shape = MaterialTheme.shapes.large,
-        color =
-            if (row.isComplete) {
-                MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.28f)
-            } else {
-                MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.34f)
-            },
+        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f),
     ) {
-        Row(
-            modifier = Modifier.padding(12.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            verticalAlignment = Alignment.CenterVertically,
+        Column(
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            Surface(
-                modifier = Modifier.size(36.dp),
-                shape = CircleShape,
-                color = MaterialTheme.colorScheme.surface.copy(alpha = 0.88f),
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Text(
-                        text = stringResource(R.string.room_quiz_leaderboard_rank, row.rank),
-                        style = MaterialTheme.typography.labelLarge,
-                        fontWeight = FontWeight.Bold,
-                    )
+                Surface(
+                    modifier = Modifier.size(34.dp),
+                    shape = CircleShape,
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.75f),
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Text(
+                            text = stringResource(R.string.room_quiz_leaderboard_rank, row.rank),
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Bold,
+                        )
+                    }
                 }
-            }
-            UserAvatar(
-                displayName = row.displayName,
-                photoUrl = row.photoUrl,
-                modifier = Modifier.size(42.dp),
-            )
-            Column(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(6.dp),
-            ) {
-                Text(
-                    text = row.displayName,
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.SemiBold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
+                UserAvatar(
+                    displayName = row.displayName,
+                    photoUrl = row.photoUrl,
+                    modifier = Modifier.size(44.dp),
                 )
-                if (row.email.isNotBlank()) {
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(2.dp),
+                ) {
                     Text(
-                        text = row.email,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        text = row.displayName,
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
+                    if (row.email.isNotBlank()) {
+                        Text(
+                            text = row.email,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
                 }
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    LeaderboardStatusChip(isComplete = row.isComplete)
-                    Text(
-                        text =
-                            stringResource(
-                                R.string.room_quiz_leaderboard_solved_value,
-                                row.solvedQuizCount,
-                                row.totalQuizCount,
-                            ),
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
+                LeaderboardScorePill(
+                    score = row.score,
+                    maxScore = row.maxScore,
+                    isComplete = row.isComplete,
+                )
             }
-            Text(
-                text =
-                    stringResource(
-                        R.string.room_quiz_result_score_value,
-                        row.score,
-                        row.maxScore,
-                    ),
-                style = MaterialTheme.typography.labelLarge,
-                fontWeight = FontWeight.SemiBold,
-                maxLines = 1,
-            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                LeaderboardStatusChip(isComplete = row.isComplete)
+                Text(
+                    text =
+                        stringResource(
+                            R.string.room_quiz_leaderboard_solved_value,
+                            row.solvedQuizCount,
+                            row.totalQuizCount,
+                        ),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
         }
+    }
+}
+
+@Composable
+private fun LeaderboardScorePill(
+    score: Int,
+    maxScore: Int,
+    isComplete: Boolean,
+) {
+    Surface(
+        shape = MaterialTheme.shapes.medium,
+        color =
+            if (isComplete) {
+                MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f)
+            } else {
+                MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.5f)
+            },
+    ) {
+        Text(
+            text = stringResource(R.string.room_quiz_result_score_value, score, maxScore),
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp),
+            style = MaterialTheme.typography.labelMedium,
+            fontWeight = FontWeight.SemiBold,
+            maxLines = 1,
+        )
     }
 }
 
@@ -1026,6 +1057,7 @@ private fun SectionIntro(
 private fun AnnouncementCard(
     item: RoomAnnouncementCardUiState,
     onClick: () -> Unit,
+    onCommentClick: () -> Unit,
     onEditClick: () -> Unit,
     onDeleteClick: () -> Unit,
 ) {
@@ -1172,6 +1204,61 @@ private fun AnnouncementCard(
                     }
                 }
             }
+        }
+        if (item.latestComment != null) {
+            LatestCommentPreview(preview = item.latestComment)
+        }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.End,
+        ) {
+            TextButton(onClick = onCommentClick) {
+                Text(
+                    text =
+                        if (item.commentCount > 0) {
+                            pluralStringResource(
+                                R.plurals.action_comment_post_with_count,
+                                item.commentCount,
+                                item.commentCount,
+                            )
+                        } else {
+                            stringResource(R.string.action_comment_post)
+                        },
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun LatestCommentPreview(preview: RoomCommentPreviewUiState) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.large,
+        color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.68f),
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            Text(
+                text = stringResource(R.string.room_latest_comment_label),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.primary,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Text(
+                text =
+                    stringResource(
+                        R.string.room_latest_comment_value,
+                        preview.authorName,
+                        preview.message,
+                    ),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
         }
     }
 }
@@ -1785,6 +1872,8 @@ private fun RoomDetailScreenPreview() {
                                 message = "Review unit 3 and prepare five new travel expressions.",
                                 authorName = "Prof. Benza",
                                 attachments = emptyList(),
+                                commentCount = 0,
+                                latestComment = null,
                                 canManage = true,
                             ),
                         ),
@@ -1810,6 +1899,7 @@ private fun RoomDetailScreenPreview() {
             onBackClick = {},
             onCreatePostClick = {},
             onOpenPostClick = {},
+            onCommentPostClick = {},
             onEditPostClick = {},
             onOpenQuizClick = {},
             onOpenQuizManagerClick = {},

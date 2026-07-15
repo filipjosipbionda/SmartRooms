@@ -6,6 +6,7 @@ import {
   DEFAULT_TOPIC,
   FUNCTIONS_REGION,
   MODEL_NAME,
+  QUIZ_GENERATION_TIMEOUT_SECONDS,
   QUIZZES_COLLECTION,
   ROOMS_COLLECTION,
   CEFR_LEVELS
@@ -31,11 +32,14 @@ import {
   readRequiredString
 } from "./shared/validation.js";
 
+const AI_MODEL_BUSY_MESSAGE = "AI is busy right now. Please try again in a moment.";
+
 // This file contains the quiz-generation flow powered by the Gemini model.
 export const generateQuizForRoom = onCall(
   {
     cors: true,
     region: FUNCTIONS_REGION,
+    timeoutSeconds: QUIZ_GENERATION_TIMEOUT_SECONDS,
     secrets: [geminiApiKey]
   },
   async (request) => {
@@ -174,6 +178,7 @@ export const retryQuizForRoom = onCall(
   {
     cors: true,
     region: FUNCTIONS_REGION,
+    timeoutSeconds: QUIZ_GENERATION_TIMEOUT_SECONDS,
     secrets: [geminiApiKey]
   },
   async (request) => {
@@ -338,6 +343,8 @@ function buildQuizPrompt(input: {
     "- Do not drift into generic vocabulary questions unless the requested focus is explicitly vocabulary-based.",
     "- Use natural, learner-friendly English examples that clearly demonstrate the requested focus."
   ];
+  const mixedMultipleChoiceCount = Math.ceil(input.questionCount / 2);
+  const mixedFillInBlankCount = input.questionCount - mixedMultipleChoiceCount;
 
   const questionTypeInstructions = input.questionType === "fill_in_blank"
     ? [
@@ -351,15 +358,21 @@ function buildQuizPrompt(input: {
     ]
     : input.questionType === "mixed"
       ? [
-        `Create exactly ${input.questionCount} quiz questions with both multiple-choice and fill-in-the-blank questions.`,
+        `Create exactly ${input.questionCount} quiz questions total.`,
+        `Create exactly ${mixedMultipleChoiceCount} multiple_choice questions and exactly ${mixedFillInBlankCount} fill_in_blank questions.`,
+        "- Alternate the question types when possible, starting with multiple_choice.",
         "Use this exact schema:",
         "{\"cefrLevel\":\"A1|A2|B1|B2|C1|C2\",\"questions\":[{\"type\":\"multiple_choice\",\"prompt\":\"string\",\"options\":[\"string\",\"string\",\"string\",\"string\"],\"correctOptionIndex\":0,\"explanation\":\"string\"},{\"type\":\"fill_in_blank\",\"prompt\":\"string with exactly one blank written as ____\",\"answerText\":\"string\",\"explanation\":\"string\"}]}",
         "Rules:",
-        "- Include at least one multiple_choice question and at least one fill_in_blank question.",
-        "- Keep the two question types as evenly balanced as possible.",
-        "- For multiple_choice questions, include exactly 4 options and correctOptionIndex must be 0, 1, 2, or 3.",
+        "- Do not add, remove, or merge questions.",
+        "- Each question must include a type value of either multiple_choice or fill_in_blank.",
+        "- Every multiple_choice question must have type, prompt, options, correctOptionIndex, and explanation.",
+        "- Every multiple_choice question must include exactly 4 options and correctOptionIndex must be 0, 1, 2, or 3.",
+        "- Multiple_choice questions must not include answerText.",
+        "- Every fill_in_blank question must have type, prompt, answerText, and explanation.",
         "- For fill_in_blank questions, each prompt must contain exactly one blank written as ____.",
-        "- Do not include answer choices on fill_in_blank questions."
+        "- Fill_in_blank questions must not include options or correctOptionIndex.",
+        "- The questions array length must exactly match the requested total."
       ]
     : [
       `Create exactly ${input.questionCount} multiple-choice quiz questions.`,
@@ -426,10 +439,23 @@ function toQuizGenerationFailureReason(error: unknown): string {
   }
 
   if (error instanceof Error) {
+    if (isAiModelBusyError(error)) {
+      return AI_MODEL_BUSY_MESSAGE;
+    }
     return error.message;
   }
 
   return "Quiz generation failed.";
+}
+
+function isAiModelBusyError(error: Error): boolean {
+  const message = error.message.toLowerCase();
+  return (
+    message.includes("503") ||
+    message.includes("unavailable") ||
+    message.includes("high demand") ||
+    message.includes("overloaded")
+  );
 }
 
 async function loadRoomForQuizGeneration(roomId: string, userId: string) {
@@ -472,19 +498,28 @@ function validateQuiz(
   requestedQuestionType: QuestionType
 ): void {
   if (!Array.isArray(quiz.questions) || quiz.questions.length !== requestedQuestionCount) {
-    throw new HttpsError("internal", "AI returned an invalid quiz structure.");
+    const actualQuestionCount = Array.isArray(quiz.questions) ? quiz.questions.length : 0;
+    throw new HttpsError(
+      "internal",
+      `AI returned ${actualQuestionCount} questions, but ${requestedQuestionCount} were requested.`
+    );
   }
 
   if (quiz.cefrLevel !== requestedCefrLevel) {
     quiz.cefrLevel = requestedCefrLevel;
   }
 
+  const mixedMultipleChoiceCount = Math.ceil(requestedQuestionCount / 2);
+  const mixedFillInBlankCount = requestedQuestionCount - mixedMultipleChoiceCount;
   let multipleChoiceCount = 0;
   let fillInBlankCount = 0;
 
   quiz.questions.forEach((question, index) => {
-    if (!question.prompt || !question.explanation) {
-      throw new HttpsError("internal", `AI returned an invalid question at index ${index}.`);
+    if (!question.prompt) {
+      throw new HttpsError("internal", `AI returned a question without a prompt at index ${index}.`);
+    }
+    if (!question.explanation) {
+      throw new HttpsError("internal", `AI returned a question without an explanation at index ${index}.`);
     }
 
     const questionType = resolveGeneratedQuestionType(question, requestedQuestionType, index);
@@ -492,14 +527,21 @@ function validateQuiz(
     if (questionType === "multiple_choice") {
       multipleChoiceCount += 1;
       const multipleChoiceQuestion = question as MultipleChoiceGeneratedQuestion;
+      if (!Array.isArray(multipleChoiceQuestion.options) || multipleChoiceQuestion.options.length !== 4) {
+        throw new HttpsError(
+          "internal",
+          `AI returned a multiple_choice question without exactly 4 options at index ${index}.`
+        );
+      }
       if (
-        !Array.isArray(multipleChoiceQuestion.options) ||
-        multipleChoiceQuestion.options.length !== 4 ||
         multipleChoiceQuestion.correctOptionIndex == null ||
         multipleChoiceQuestion.correctOptionIndex < 0 ||
         multipleChoiceQuestion.correctOptionIndex > 3
       ) {
-        throw new HttpsError("internal", `AI returned an invalid question at index ${index}.`);
+        throw new HttpsError(
+          "internal",
+          `AI returned a multiple_choice question without a valid correctOptionIndex at index ${index}.`
+        );
       }
       return;
     }
@@ -507,8 +549,17 @@ function validateQuiz(
     if (questionType === "fill_in_blank") {
       fillInBlankCount += 1;
       const fillInBlankQuestion = question as FillInBlankGeneratedQuestion;
-      if (!fillInBlankQuestion.answerText || question.prompt.split("____").length !== 2) {
-        throw new HttpsError("internal", `AI returned an invalid question at index ${index}.`);
+      if (!fillInBlankQuestion.answerText) {
+        throw new HttpsError(
+          "internal",
+          `AI returned a fill_in_blank question without answerText at index ${index}.`
+        );
+      }
+      if (question.prompt.split("____").length !== 2) {
+        throw new HttpsError(
+          "internal",
+          `AI returned a fill_in_blank question without exactly one ____ blank at index ${index}.`
+        );
       }
       return;
     }
@@ -523,8 +574,14 @@ function validateQuiz(
     }
   });
 
-  if (requestedQuestionType === "mixed" && (multipleChoiceCount === 0 || fillInBlankCount === 0)) {
-    throw new HttpsError("internal", "AI returned a mixed quiz without both question types.");
+  if (
+    requestedQuestionType === "mixed" &&
+    (multipleChoiceCount !== mixedMultipleChoiceCount || fillInBlankCount !== mixedFillInBlankCount)
+  ) {
+    throw new HttpsError(
+      "internal",
+      `AI returned ${multipleChoiceCount} multiple_choice and ${fillInBlankCount} fill_in_blank questions, but mixed quizzes require ${mixedMultipleChoiceCount} and ${mixedFillInBlankCount}.`
+    );
   }
 }
 
@@ -596,6 +653,8 @@ function buildQuizResponseSchema(questionCount: number, questionType: QuestionTy
       cefrLevel: { type: "string", enum: CEFR_LEVELS },
       questions: {
         type: "array",
+        minItems: questionCount,
+        maxItems: questionCount,
         items: questionType === "fill_in_blank"
           ? {
             type: "object",
@@ -608,21 +667,34 @@ function buildQuizResponseSchema(questionCount: number, questionType: QuestionTy
           }
           : questionType === "mixed"
             ? {
-              type: "object",
-              properties: {
-                type: { type: "string", enum: ["multiple_choice", "fill_in_blank"] },
-                prompt: { type: "string" },
-                options: {
-                  type: "array",
-                  minItems: 4,
-                  maxItems: 4,
-                  items: { type: "string" }
+              anyOf: [
+                {
+                  type: "object",
+                  properties: {
+                    type: { type: "string", enum: ["multiple_choice"] },
+                    prompt: { type: "string" },
+                    options: {
+                      type: "array",
+                      minItems: 4,
+                      maxItems: 4,
+                      items: { type: "string" }
+                    },
+                    correctOptionIndex: { type: "integer", minimum: 0, maximum: 3 },
+                    explanation: { type: "string" }
+                  },
+                  required: ["type", "prompt", "options", "correctOptionIndex", "explanation"]
                 },
-                correctOptionIndex: { type: "integer" },
-                answerText: { type: "string" },
-                explanation: { type: "string" }
-              },
-              required: ["type", "prompt", "explanation"]
+                {
+                  type: "object",
+                  properties: {
+                    type: { type: "string", enum: ["fill_in_blank"] },
+                    prompt: { type: "string" },
+                    answerText: { type: "string" },
+                    explanation: { type: "string" }
+                  },
+                  required: ["type", "prompt", "answerText", "explanation"]
+                }
+              ]
             }
           : questionType === "word_scramble"
             ? {

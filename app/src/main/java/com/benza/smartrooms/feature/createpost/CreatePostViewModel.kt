@@ -7,8 +7,10 @@ import com.benza.smartrooms.data.auth.model.AuthUser
 import com.benza.smartrooms.data.auth.repository.AuthRepository
 import com.benza.smartrooms.data.room.model.CreateAnnouncementAttachment
 import com.benza.smartrooms.data.room.model.CreateAnnouncementRequest
+import com.benza.smartrooms.data.room.model.CreateRoomCommentRequest
 import com.benza.smartrooms.data.room.model.RoomAnnouncement
 import com.benza.smartrooms.data.room.model.RoomAnnouncementAttachment
+import com.benza.smartrooms.data.room.model.RoomComment
 import com.benza.smartrooms.data.room.model.RoomOperationResult
 import com.benza.smartrooms.data.room.model.UpdateAnnouncementRequest
 import com.benza.smartrooms.data.room.repository.RoomRepository
@@ -42,6 +44,14 @@ internal data class CreatePostAttachmentUiState(
     val downloadUrl: String? = null,
 )
 
+internal data class RoomCommentUiState(
+    val id: String,
+    val authorName: String,
+    val authorPhotoUrl: String?,
+    val message: String,
+    val createdAtEpochMillis: Long,
+)
+
 internal data class CreatePostUiState(
     val roomId: String,
     val roomName: String,
@@ -50,6 +60,11 @@ internal data class CreatePostUiState(
     val titleInput: String = "",
     val messageInput: String = "",
     val attachments: List<CreatePostAttachmentUiState> = emptyList(),
+    val comments: List<RoomCommentUiState> = emptyList(),
+    val commentInput: String = "",
+    val isLoadingComments: Boolean = false,
+    val isSubmittingComment: Boolean = false,
+    val commentErrorRes: Int? = null,
     val titleErrorRes: Int? = null,
     val messageErrorRes: Int? = null,
     val errorMessageRes: Int? = null,
@@ -107,6 +122,9 @@ internal class CreatePostViewModel(
         observeCurrentUserProfile()
         if (announcementId != null) {
             loadAnnouncement(announcementId)
+            if (viewOnly) {
+                observeComments(announcementId)
+            }
         }
     }
 
@@ -311,6 +329,86 @@ internal class CreatePostViewModel(
         }
     }
 
+    internal fun onCommentChanged(value: String) {
+        if (_uiState.value.mode != CreatePostMode.VIEW) return
+
+        _uiState.update {
+            it.copy(
+                commentInput = value,
+                commentErrorRes = null,
+                errorMessageRes = null,
+                errorMessageText = null,
+            )
+        }
+    }
+
+    internal fun submitComment() {
+        val user =
+            currentUser ?: run {
+                _uiState.update { it.copy(errorMessageRes = R.string.error_room_auth_required) }
+                return
+            }
+        val state = _uiState.value
+        val announcementId = state.announcementId ?: return
+        if (state.mode != CreatePostMode.VIEW || state.isSubmittingComment) return
+
+        val message = state.commentInput.trim()
+        val commentError = if (message.isBlank()) R.string.error_comment_required else null
+        _uiState.update {
+            it.copy(
+                commentInput = message,
+                commentErrorRes = commentError,
+                errorMessageRes = commentError,
+                errorMessageText = null,
+            )
+        }
+        if (commentError != null) return
+
+        _uiState.update {
+            it.copy(
+                isSubmittingComment = true,
+                commentErrorRes = null,
+                errorMessageRes = null,
+                errorMessageText = null,
+            )
+        }
+
+        viewModelScope.launch {
+            when (
+                val result =
+                    roomRepository.createAnnouncementComment(
+                        CreateRoomCommentRequest(
+                            roomId = state.roomId,
+                            announcementId = announcementId,
+                            authorId = user.uid,
+                            authorName = user.displayNameOrEmailName(),
+                            authorPhotoUrl = user.photoUrl,
+                            message = message,
+                        ),
+                    )
+            ) {
+                is RoomOperationResult.Success -> {
+                    _uiState.update {
+                        it.copy(
+                            isSubmittingComment = false,
+                            commentInput = "",
+                        )
+                    }
+                }
+
+                is RoomOperationResult.Error -> {
+                    _uiState.update {
+                        it.copy(
+                            isSubmittingComment = false,
+                            errorMessageRes = result.messageRes,
+                            errorMessageText = result.debugMessage,
+                        )
+                    }
+                }
+            }
+        }
+    }
+
     private suspend fun createPost(
         user: AuthUser,
         title: String,
@@ -410,6 +508,36 @@ internal class CreatePostViewModel(
         }
     }
 
+    private fun observeComments(announcementId: String) {
+        _uiState.update { it.copy(isLoadingComments = true) }
+        viewModelScope.launch {
+            roomRepository.observeAnnouncementComments(_uiState.value.roomId, announcementId).collect { result ->
+                when (result) {
+                    is RoomOperationResult.Success -> {
+                        _uiState.update {
+                            it.copy(
+                                comments = result.data.map(RoomComment::toUiState),
+                                isLoadingComments = false,
+                                errorMessageRes = null,
+                                errorMessageText = null,
+                            )
+                        }
+                    }
+
+                    is RoomOperationResult.Error -> {
+                        _uiState.update {
+                            it.copy(
+                                isLoadingComments = false,
+                                errorMessageRes = result.messageRes,
+                                errorMessageText = result.debugMessage,
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     private fun populateExistingAnnouncement(announcement: RoomAnnouncement) {
         originalAnnouncement = announcement
         val canEdit = !viewOnly && canEditAnnouncement(announcement)
@@ -480,6 +608,15 @@ private fun RoomAnnouncementAttachment.toUiState(): CreatePostAttachmentUiState 
         sizeBytes = sizeBytes,
         storagePath = storagePath,
         downloadUrl = downloadUrl,
+    )
+
+private fun RoomComment.toUiState(): RoomCommentUiState =
+    RoomCommentUiState(
+        id = id,
+        authorName = authorName,
+        authorPhotoUrl = authorPhotoUrl,
+        message = message,
+        createdAtEpochMillis = createdAtEpochMillis,
     )
 
 private fun CreatePostAttachmentUiState.toCreateAttachment(): CreateAnnouncementAttachment? =

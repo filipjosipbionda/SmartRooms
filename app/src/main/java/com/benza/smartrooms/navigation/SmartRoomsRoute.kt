@@ -87,6 +87,7 @@ internal data class PostDetailRoute(
     val roomId: String,
     val roomName: String,
     val announcementId: String,
+    val focusComments: Boolean = false,
 ) : SmartRoomsDestination
 
 /**

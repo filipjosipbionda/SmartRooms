@@ -57,6 +57,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.benza.smartrooms.R
 import com.benza.smartrooms.data.room.model.RoomQuiz
 import com.benza.smartrooms.data.room.model.RoomQuizQuestion
+import com.benza.smartrooms.data.room.model.RoomQuizQuestionResult
 import com.benza.smartrooms.data.room.model.RoomQuizScoring
 import com.benza.smartrooms.feature.roomdetail.labelRes
 import com.benza.smartrooms.ui.components.AuthFeedbackBanner
@@ -156,6 +157,16 @@ internal fun RoomQuizPlayerScreen(
                     }
                 }
 
+                quiz != null && uiState.isQuizCompleted -> {
+                    item {
+                        QuizCompletionSummaryCard(
+                            quiz = quiz,
+                            uiState = uiState,
+                            onDoneClick = onExitClick,
+                        )
+                    }
+                }
+
                 quiz != null && currentQuestion != null -> {
                     item {
                         QuizProgressCard(
@@ -230,6 +241,185 @@ internal fun RoomQuizPlayerScreen(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun QuizCompletionSummaryCard(
+    quiz: RoomQuiz,
+    uiState: RoomQuizPlayerUiState,
+    onDoneClick: () -> Unit,
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.extraLarge,
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+    ) {
+        Column(
+            modifier = Modifier.padding(20.dp),
+            verticalArrangement = Arrangement.spacedBy(18.dp),
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(
+                    text = stringResource(R.string.room_quiz_player_results_title),
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Text(
+                    text =
+                        stringResource(
+                            R.string.room_quiz_player_results_subtitle,
+                            uiState.correctQuestionIds.size,
+                            quiz.questionCount,
+                        ),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                shape = MaterialTheme.shapes.large,
+                color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.42f),
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    Text(
+                        text = stringResource(R.string.room_quiz_player_score_label),
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Text(
+                        text = stringResource(R.string.room_quiz_player_score_value, uiState.score, uiState.maxScore),
+                        style = MaterialTheme.typography.headlineMedium,
+                        fontWeight = FontWeight.Bold,
+                    )
+                }
+            }
+
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                quiz.questions.forEachIndexed { index, question ->
+                    QuizResultQuestionRow(
+                        questionIndex = index,
+                        question = question,
+                        result = uiState.questionResultsById[question.id],
+                        userAnswer = question.userAnswerText(uiState),
+                        correctAnswer = question.correctAnswerText(),
+                    )
+                }
+            }
+
+            Button(
+                onClick = onDoneClick,
+                modifier = Modifier.fillMaxWidth(),
+                enabled = !uiState.isSavingResult,
+            ) {
+                Text(stringResource(R.string.action_done))
+            }
+        }
+    }
+}
+
+@Composable
+private fun QuizResultQuestionRow(
+    questionIndex: Int,
+    question: RoomQuizQuestion,
+    result: RoomQuizQuestionResult?,
+    userAnswer: String,
+    correctAnswer: String,
+) {
+    val isCorrect = result?.isCorrect == true
+    val statusText =
+        stringResource(
+            if (isCorrect) {
+                R.string.room_quiz_player_answer_correct
+            } else {
+                R.string.room_quiz_player_answer_incorrect
+            },
+        )
+    val statusColor =
+        if (isCorrect) {
+            MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
+        } else {
+            MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.45f)
+        }
+
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.large,
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.28f),
+    ) {
+        Column(
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = stringResource(R.string.room_quiz_player_result_question_number, questionIndex + 1),
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+                Surface(
+                    shape = MaterialTheme.shapes.small,
+                    color = statusColor,
+                ) {
+                    Text(
+                        text = statusText,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                }
+                Spacer(modifier = Modifier.weight(1f))
+                Text(
+                    text =
+                        stringResource(
+                            R.string.room_quiz_player_question_score_short,
+                            result?.score ?: 0,
+                            result?.maxScore ?: RoomQuizScoring.maxScore(question),
+                        ),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Text(
+                text = question.prompt,
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.SemiBold,
+            )
+            ResultAnswerLine(
+                label = stringResource(R.string.room_quiz_player_your_answer_label),
+                value = userAnswer,
+            )
+            ResultAnswerLine(
+                label = stringResource(R.string.room_quiz_player_correct_answer_label),
+                value = correctAnswer,
+            )
+        }
+    }
+}
+
+@Composable
+private fun ResultAnswerLine(
+    label: String,
+    value: String,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Text(
+            text = value,
+            style = MaterialTheme.typography.bodyMedium,
+        )
     }
 }
 
@@ -973,6 +1163,34 @@ private fun QuestionCardShell(
 }
 
 private const val SCRAMBLE_ROW_SIZE = 6
+
+@Composable
+private fun RoomQuizQuestion.userAnswerText(uiState: RoomQuizPlayerUiState): String =
+    when (this) {
+        is RoomQuizQuestion.MultipleChoice ->
+            uiState.selectedOptionIndexes[id]
+                ?.let(options::getOrNull)
+                ?: stringResource(R.string.room_quiz_player_unanswered)
+        is RoomQuizQuestion.FillInBlank ->
+            uiState.fillInAnswers[id]
+                .orEmpty()
+                .ifBlank { stringResource(R.string.room_quiz_player_unanswered) }
+        is RoomQuizQuestion.WordScramble -> {
+            val tilesById = buildScrambleTiles().associateBy(ScrambleTile::id)
+            uiState.scrambleAnswerSlots[id]
+                .orEmpty()
+                .mapNotNull(tilesById::get)
+                .joinToString(separator = "") { it.letter }
+                .ifBlank { stringResource(R.string.room_quiz_player_unanswered) }
+        }
+    }
+
+private fun RoomQuizQuestion.correctAnswerText(): String =
+    when (this) {
+        is RoomQuizQuestion.MultipleChoice -> options.getOrNull(correctOptionIndex).orEmpty()
+        is RoomQuizQuestion.FillInBlank -> answerText
+        is RoomQuizQuestion.WordScramble -> answerWord
+    }
 
 @Composable
 private fun QuizNavigationCard(

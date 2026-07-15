@@ -1,12 +1,14 @@
 package com.benza.smartrooms.data.room.repository
 
 import com.benza.smartrooms.data.room.model.CreateAnnouncementRequest
+import com.benza.smartrooms.data.room.model.CreateRoomCommentRequest
 import com.benza.smartrooms.data.room.model.CreateRoomInvitationRequest
 import com.benza.smartrooms.data.room.model.CreateRoomRequest
 import com.benza.smartrooms.data.room.model.GenerateQuizRequest
 import com.benza.smartrooms.data.room.model.Room
 import com.benza.smartrooms.data.room.model.RoomAnnouncement
 import com.benza.smartrooms.data.room.model.RoomAnnouncementAttachment
+import com.benza.smartrooms.data.room.model.RoomComment
 import com.benza.smartrooms.data.room.model.RoomInvitation
 import com.benza.smartrooms.data.room.model.RoomMember
 import com.benza.smartrooms.data.room.model.RoomOperationResult
@@ -97,6 +99,14 @@ internal interface RoomRepository {
     ): RoomOperationResult<RoomAnnouncement>
 
     /**
+     * Observes comments for one room announcement.
+     */
+    fun observeAnnouncementComments(
+        roomId: String,
+        announcementId: String,
+    ): Flow<RoomOperationResult<List<RoomComment>>>
+
+    /**
      * Creates a new room document for the signed-in user.
      */
     suspend fun createRoom(request: CreateRoomRequest): RoomOperationResult<Unit>
@@ -105,6 +115,11 @@ internal interface RoomRepository {
      * Creates a new announcement document inside the supplied room.
      */
     suspend fun createAnnouncement(request: CreateAnnouncementRequest): RoomOperationResult<Unit>
+
+    /**
+     * Creates a comment under one room announcement.
+     */
+    suspend fun createAnnouncementComment(request: CreateRoomCommentRequest): RoomOperationResult<Unit>
 
     /**
      * Updates one announcement document inside the supplied room.

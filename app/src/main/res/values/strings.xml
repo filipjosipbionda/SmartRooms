@@ -33,6 +33,12 @@
     <string name="action_save_post">Save post</string>
     <string name="action_edit_post">Edit post</string>
     <string name="action_delete_post">Delete post</string>
+    <string name="action_comment_post">Comment</string>
+    <plurals name="action_comment_post_with_count">
+        <item quantity="one">%1$d comment</item>
+        <item quantity="other">%1$d comments</item>
+    </plurals>
+    <string name="action_post_comment">Post comment</string>
     <string name="action_invite_to_room">Invite people</string>
     <string name="action_send_invite">Invite</string>
     <string name="action_accept_invite">Accept</string>
@@ -47,6 +53,7 @@
     <string name="action_next">Next</string>
     <string name="action_submit_answer">Submit answer</string>
     <string name="action_finish_quiz">Finish quiz</string>
+    <string name="action_done">Done</string>
     <string name="action_review_quiz">Review quiz</string>
     <string name="action_retry_quiz">Retry quiz</string>
     <string name="action_retry">Retry</string>
@@ -99,6 +106,11 @@
     <string name="edit_post_delete_subtitle">This removes the post from the room feed and deletes all attached files.</string>
     <string name="label_post_title">Post title</string>
     <string name="label_post_message">Post message</string>
+    <string name="label_comment">Comment</string>
+    <string name="comment_input_placeholder">Write a comment</string>
+    <string name="comments_title">Comments</string>
+    <string name="comments_loading">Loading comments&#8230;</string>
+    <string name="comments_empty">No comments yet. Start the discussion.</string>
     <string name="create_post_attachments_title">Attachments</string>
     <string name="create_post_attachments_subtitle">Add one or more documents to share with the room.</string>
     <string name="action_add_files">Add files</string>
@@ -122,6 +134,8 @@
     <string name="room_detail_feed_level_metric">Level</string>
     <string name="room_detail_level_not_set">Not set</string>
     <string name="room_detail_generated_at">Created %1$s</string>
+    <string name="room_latest_comment_label">Latest comment</string>
+    <string name="room_latest_comment_value">%1$s: %2$s</string>
     <string name="room_detail_post_actions_menu">Post actions</string>
     <string name="room_detail_post_deleted">Post deleted.</string>
     <plurals name="room_detail_more_attachments">
@@ -294,6 +308,12 @@
     <string name="room_quiz_player_scramble_hint">Drag letters into the boxes. Two letters are extra.</string>
     <string name="room_quiz_player_scramble_slots_label">Answer</string>
     <string name="room_quiz_player_scramble_bank_label">Letter bank</string>
+    <string name="room_quiz_player_results_title">Quiz complete</string>
+    <string name="room_quiz_player_results_subtitle">%1$d of %2$d correct</string>
+    <string name="room_quiz_player_result_question_number">Question %1$d</string>
+    <string name="room_quiz_player_question_score_short">%1$d/%2$d pts</string>
+    <string name="room_quiz_player_your_answer_label">Your answer</string>
+    <string name="room_quiz_player_correct_answer_label">Correct answer</string>
     <string name="profile_title">Profile</string>
     <string name="profile_role_title">Role</string>
     <string name="profile_role_label">Account type</string>
@@ -336,6 +356,7 @@
     <string name="error_announcement_message_required">Post message is required.</string>
     <string name="error_announcement_fix_fields">Please fix the highlighted post fields.</string>
     <string name="error_announcement_not_found">The selected post could not be found.</string>
+    <string name="error_comment_required">Comment cannot be empty.</string>
     <string name="error_post_edit_forbidden">You can only edit your own posts.</string>
     <string name="error_room_invite_already_in_room">This user is already part of the room.</string>
     <string name="error_room_invite_owner_required">Only the room owner can invite users.</string>

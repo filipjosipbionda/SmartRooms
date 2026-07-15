@@ -11,4 +11,6 @@ internal data class RoomAnnouncement(
     val authorName: String,
     val createdAtEpochMillis: Long,
     val attachments: List<RoomAnnouncementAttachment> = emptyList(),
+    val commentCount: Int = 0,
+    val latestComment: RoomCommentPreview? = null,
 )

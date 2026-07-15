@@ -9,6 +9,7 @@ import com.benza.smartrooms.data.room.model.CreateRoomInvitationRequest
 import com.benza.smartrooms.data.room.model.QuestionType
 import com.benza.smartrooms.data.room.model.RoomAnnouncement
 import com.benza.smartrooms.data.room.model.RoomAnnouncementAttachment
+import com.benza.smartrooms.data.room.model.RoomCommentPreview
 import com.benza.smartrooms.data.room.model.RoomInvitationAccess
 import com.benza.smartrooms.data.room.model.RoomMember
 import com.benza.smartrooms.data.room.model.RoomMemberAccountRole
@@ -38,7 +39,15 @@ internal data class RoomAnnouncementCardUiState(
     val message: String,
     val authorName: String,
     val attachments: List<RoomAnnouncementAttachment>,
+    val commentCount: Int,
+    val latestComment: RoomCommentPreviewUiState?,
     val canManage: Boolean,
+)
+
+internal data class RoomCommentPreviewUiState(
+    val authorName: String,
+    val message: String,
+    val createdAtEpochMillis: Long,
 )
 
 internal data class RoomQuizLeaderboardRowUiState(
@@ -783,7 +792,16 @@ private fun RoomAnnouncement.toAnnouncementCardUiState(
         message = message,
         authorName = authorName,
         attachments = attachments,
+        commentCount = commentCount,
+        latestComment = latestComment?.toUiState(),
         canManage = canCurrentUserManagePosts && authorId == currentUserId,
+    )
+
+private fun RoomCommentPreview.toUiState(): RoomCommentPreviewUiState =
+    RoomCommentPreviewUiState(
+        authorName = authorName,
+        message = message,
+        createdAtEpochMillis = createdAtEpochMillis,
     )
 
 private fun RoomMember.toRoomMemberUiState(

@@ -9,6 +9,7 @@ import com.google.firebase.functions.FirebaseFunctions
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.asExecutor
 import kotlinx.coroutines.suspendCancellableCoroutine
+import java.util.concurrent.TimeUnit
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
@@ -24,6 +25,7 @@ internal class FirebaseFunctionsRoomDataSource(
     internal suspend fun generateQuiz(request: GenerateQuizRequest) {
         functions
             .getHttpsCallable(GENERATE_QUIZ_FUNCTION)
+            .withQuizGenerationTimeout()
             .call(
                 mapOf(
                     CLIENT_REQUEST_ID_FIELD to request.clientRequestId,
@@ -49,6 +51,7 @@ internal class FirebaseFunctionsRoomDataSource(
     ) {
         functions
             .getHttpsCallable(RETRY_QUIZ_FUNCTION)
+            .withQuizGenerationTimeout()
             .call(
                 mapOf(
                     ROOM_ID_FIELD to roomId,
@@ -123,6 +126,9 @@ private fun QuizKind.toBackendValue(): String =
         QuizKind.VOCABULARY -> "vocabulary"
     }
 
+private fun com.google.firebase.functions.HttpsCallableReference.withQuizGenerationTimeout() =
+    apply { setTimeout(QUIZ_GENERATION_TIMEOUT_SECONDS.toLong(), TimeUnit.SECONDS) }
+
 private suspend fun <T> Task<T>.await(): T =
     suspendCancellableCoroutine { continuation ->
         addOnCompleteListener(FIREBASE_TASK_EXECUTOR) { task ->
@@ -138,6 +144,7 @@ private val FIREBASE_TASK_EXECUTOR = Dispatchers.IO.asExecutor()
 
 private const val GENERATE_QUIZ_FUNCTION = "generateQuizForRoom"
 private const val RETRY_QUIZ_FUNCTION = "retryQuizForRoom"
+private const val QUIZ_GENERATION_TIMEOUT_SECONDS = 300
 private const val SEND_ROOM_INVITATION_FUNCTION = "sendRoomInvitation"
 private const val ACCEPT_ROOM_INVITATION_FUNCTION = "acceptRoomInvitation"
 private const val REJECT_ROOM_INVITATION_FUNCTION = "rejectRoomInvitation"

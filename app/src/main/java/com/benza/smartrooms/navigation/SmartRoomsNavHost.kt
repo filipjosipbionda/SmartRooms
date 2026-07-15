@@ -137,6 +137,16 @@ internal fun SmartRoomsNavHost(
                         ),
                     )
                 },
+                onCommentPostClick = { announcementId ->
+                    navController.navigate(
+                        PostDetailRoute(
+                            roomId = route.roomId,
+                            roomName = route.roomName,
+                            announcementId = announcementId,
+                            focusComments = true,
+                        ),
+                    )
+                },
                 onEditPostClick = { announcementId ->
                     navController.navigate(
                         CreatePostRoute(
@@ -201,6 +211,7 @@ internal fun SmartRoomsNavHost(
                 roomId = route.roomId,
                 roomName = route.roomName,
                 announcementId = route.announcementId,
+                focusComments = route.focusComments,
                 onBackClick = { navController.popBackStack() },
             )
         }

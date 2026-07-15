@@ -10,3 +10,4 @@ export {
 } from "./roomInvitations.js";
 export { generateQuizForRoom, retryQuizForRoom } from "./quizzes.js";
 export { syncTeacherRequestToUserProfile } from "./teacherRequests.js";
+export { syncLatestAnnouncementComment } from "./comments.js";

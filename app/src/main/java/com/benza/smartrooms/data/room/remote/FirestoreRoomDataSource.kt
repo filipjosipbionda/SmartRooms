@@ -1,12 +1,15 @@
 package com.benza.smartrooms.data.room.remote
 
 import com.benza.smartrooms.data.room.model.CreateAnnouncementRequest
+import com.benza.smartrooms.data.room.model.CreateRoomCommentRequest
 import com.benza.smartrooms.data.room.model.CreateRoomRequest
 import com.benza.smartrooms.data.room.model.QuestionType
 import com.benza.smartrooms.data.room.model.QuizKind
 import com.benza.smartrooms.data.room.model.Room
 import com.benza.smartrooms.data.room.model.RoomAnnouncement
 import com.benza.smartrooms.data.room.model.RoomAnnouncementAttachment
+import com.benza.smartrooms.data.room.model.RoomComment
+import com.benza.smartrooms.data.room.model.RoomCommentPreview
 import com.benza.smartrooms.data.room.model.RoomInvitation
 import com.benza.smartrooms.data.room.model.RoomInvitationAccess
 import com.benza.smartrooms.data.room.model.RoomMember
@@ -462,6 +465,64 @@ internal class FirestoreRoomDataSource(
             .await()
             .toAnnouncement()
 
+    internal fun observeAnnouncementComments(
+        roomId: String,
+        announcementId: String,
+    ): Flow<List<RoomComment>> =
+        callbackFlow {
+            val registration =
+                firestore
+                    .collection(ROOMS_COLLECTION)
+                    .document(roomId)
+                    .collection(ANNOUNCEMENTS_COLLECTION)
+                    .document(announcementId)
+                    .collection(COMMENTS_COLLECTION)
+                    .orderBy(COMMENT_CREATED_AT_EPOCH_FIELD, Query.Direction.ASCENDING)
+                    .addSnapshotListener(FIRESTORE_CALLBACK_EXECUTOR) { snapshot, error ->
+                        if (error != null) {
+                            close(error)
+                            return@addSnapshotListener
+                        }
+
+                        val comments =
+                            snapshot
+                                ?.documents
+                                .orEmpty()
+                                .mapNotNull { document -> document.toRoomComment(roomId, announcementId) }
+
+                        trySend(comments)
+                    }
+
+            awaitClose { registration.remove() }
+        }
+
+    internal suspend fun createAnnouncementComment(request: CreateRoomCommentRequest) {
+        val commentDocument =
+            firestore
+                .collection(ROOMS_COLLECTION)
+                .document(request.roomId)
+                .collection(ANNOUNCEMENTS_COLLECTION)
+                .document(request.announcementId)
+                .collection(COMMENTS_COLLECTION)
+                .document()
+        val now = System.currentTimeMillis()
+
+        commentDocument
+            .set(
+                mapOf(
+                    ID_FIELD to commentDocument.id,
+                    ROOM_ID_FIELD to request.roomId,
+                    ANNOUNCEMENT_ID_FIELD to request.announcementId,
+                    COMMENT_AUTHOR_ID_FIELD to request.authorId,
+                    COMMENT_AUTHOR_NAME_FIELD to request.authorName,
+                    COMMENT_AUTHOR_PHOTO_URL_FIELD to request.authorPhotoUrl,
+                    COMMENT_MESSAGE_FIELD to request.message,
+                    COMMENT_CREATED_AT_EPOCH_FIELD to now,
+                    UPDATED_AT_FIELD to now,
+                ).filterValues { it != null },
+            ).await()
+    }
+
     internal suspend fun saveQuizResult(result: RoomQuizResult) {
         firestore
             .collection(USERS_COLLECTION)
@@ -777,6 +838,40 @@ private fun DocumentSnapshot.toAnnouncement(): RoomAnnouncement? {
                 ?: 0L
         ),
         attachments = attachments,
+        commentCount = (getLong(ANNOUNCEMENT_COMMENT_COUNT_FIELD) ?: 0L).toInt(),
+        latestComment =
+            (get(ANNOUNCEMENT_LATEST_COMMENT_FIELD) as? Map<*, *>)
+                ?.toRoomCommentPreview(),
+    )
+}
+
+private fun Map<*, *>.toRoomCommentPreview(): RoomCommentPreview? {
+    val message = getStringValue(COMMENT_MESSAGE_FIELD)?.trim()?.takeIf(String::isNotBlank) ?: return null
+
+    return RoomCommentPreview(
+        id = getStringValue(ID_FIELD).orEmpty(),
+        authorName = getStringValue(COMMENT_AUTHOR_NAME_FIELD).orEmpty().ifBlank { DEFAULT_COMMENT_AUTHOR },
+        message = message,
+        createdAtEpochMillis = (this[COMMENT_CREATED_AT_EPOCH_FIELD] as? Number)?.toLong() ?: 0L,
+    )
+}
+
+private fun DocumentSnapshot.toRoomComment(
+    roomId: String,
+    announcementId: String,
+): RoomComment? {
+    val message = getString(COMMENT_MESSAGE_FIELD)?.trim()?.takeIf(String::isNotBlank) ?: return null
+    val authorId = getString(COMMENT_AUTHOR_ID_FIELD) ?: return null
+
+    return RoomComment(
+        id = id,
+        roomId = getString(ROOM_ID_FIELD).orEmpty().ifBlank { roomId },
+        announcementId = getString(ANNOUNCEMENT_ID_FIELD).orEmpty().ifBlank { announcementId },
+        authorId = authorId,
+        authorName = getString(COMMENT_AUTHOR_NAME_FIELD).orEmpty().ifBlank { DEFAULT_COMMENT_AUTHOR },
+        authorPhotoUrl = getString(COMMENT_AUTHOR_PHOTO_URL_FIELD)?.takeIf(String::isNotBlank),
+        message = message,
+        createdAtEpochMillis = getLong(COMMENT_CREATED_AT_EPOCH_FIELD) ?: 0L,
     )
 }
 
@@ -1153,6 +1248,7 @@ private const val ROOM_INVITATIONS_COLLECTION = "roomInvitations"
 private const val QUIZ_RESULTS_COLLECTION = "quizResults"
 private const val QUIZZES_COLLECTION = "quizzes"
 private const val ANNOUNCEMENTS_COLLECTION = "announcements"
+private const val COMMENTS_COLLECTION = "comments"
 private const val ID_FIELD = "id"
 private const val EMAIL_FIELD = "email"
 private const val DISPLAY_NAME_FIELD = "displayName"
@@ -1161,6 +1257,7 @@ private const val ROLE_FIELD = "role"
 private const val TEACHER_ROLE = "teacher"
 private const val STUDENT_ROLE = "student"
 private const val ROOM_ID_FIELD = "roomId"
+private const val ANNOUNCEMENT_ID_FIELD = "announcementId"
 private const val QUIZ_ID_FIELD = "quizId"
 private const val ROOM_NAME_FIELD = "roomName"
 private const val NAME_FIELD = "name"
@@ -1186,6 +1283,7 @@ private const val DEFAULT_ROOM_NAME = "Untitled room"
 private const val DEFAULT_INVITER_NAME = "Room owner"
 private const val DEFAULT_STUDENT_NAME = "Student"
 private const val DEFAULT_MEMBER_NAME = "Member"
+private const val DEFAULT_COMMENT_AUTHOR = "Comment author"
 private const val DEFAULT_GENERATING_QUIZ_TITLE = "Generating quiz..."
 private const val QUIZ_TITLE_FIELD = "title"
 private const val QUIZ_CLIENT_REQUEST_ID_FIELD = "clientRequestId"
@@ -1228,6 +1326,13 @@ private const val ANNOUNCEMENT_AUTHOR_NAME_FIELD = "authorName"
 private const val ANNOUNCEMENT_CREATED_AT_FIELD = "createdAt"
 private const val ANNOUNCEMENT_CREATED_AT_EPOCH_FIELD = "createdAtEpochMillis"
 private const val ANNOUNCEMENT_ATTACHMENTS_FIELD = "attachments"
+private const val ANNOUNCEMENT_COMMENT_COUNT_FIELD = "commentCount"
+private const val ANNOUNCEMENT_LATEST_COMMENT_FIELD = "latestComment"
+private const val COMMENT_AUTHOR_ID_FIELD = "authorId"
+private const val COMMENT_AUTHOR_NAME_FIELD = "authorName"
+private const val COMMENT_AUTHOR_PHOTO_URL_FIELD = "authorPhotoUrl"
+private const val COMMENT_MESSAGE_FIELD = "message"
+private const val COMMENT_CREATED_AT_EPOCH_FIELD = "createdAtEpochMillis"
 private const val ATTACHMENT_NAME_FIELD = "name"
 private const val ATTACHMENT_MIME_TYPE_FIELD = "mimeType"
 private const val ATTACHMENT_SIZE_BYTES_FIELD = "sizeBytes"

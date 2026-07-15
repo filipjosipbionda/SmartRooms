@@ -15,8 +15,10 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.outlined.Send
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.outlined.AttachFile
 import androidx.compose.material.icons.outlined.Folder
@@ -44,7 +46,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
@@ -58,9 +63,14 @@ import com.benza.smartrooms.R
 import com.benza.smartrooms.ui.components.AttachmentPreview
 import com.benza.smartrooms.ui.components.AuthFeedbackBanner
 import com.benza.smartrooms.ui.components.AuthFeedbackType
+import com.benza.smartrooms.ui.components.UserAvatar
 import com.benza.smartrooms.ui.components.attachmentTypeLabel
 import org.koin.androidx.compose.koinViewModel
 import org.koin.core.parameter.parametersOf
+import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
+import java.util.Locale
 
 @Composable
 internal fun CreatePostRouteScreen(
@@ -86,6 +96,7 @@ internal fun PostDetailRouteScreen(
     roomId: String,
     roomName: String,
     announcementId: String,
+    focusComments: Boolean,
     onBackClick: () -> Unit,
     viewModel: CreatePostViewModel =
         koinViewModel(
@@ -94,6 +105,7 @@ internal fun PostDetailRouteScreen(
 ) {
     CreatePostRouteContent(
         viewModel = viewModel,
+        focusComments = focusComments,
         onBackClick = onBackClick,
         onPostCompleted = onBackClick,
     )
@@ -102,6 +114,7 @@ internal fun PostDetailRouteScreen(
 @Composable
 private fun CreatePostRouteContent(
     viewModel: CreatePostViewModel,
+    focusComments: Boolean = false,
     onBackClick: () -> Unit,
     onPostCompleted: () -> Unit,
 ) {
@@ -159,6 +172,9 @@ private fun CreatePostRouteContent(
         onRemoveAttachmentClick = viewModel::removeAttachment,
         onSubmitClick = viewModel::submitPost,
         onDeleteClick = viewModel::deletePost,
+        focusComments = focusComments,
+        onCommentChanged = viewModel::onCommentChanged,
+        onSubmitCommentClick = viewModel::submitComment,
     )
 }
 
@@ -174,8 +190,12 @@ internal fun CreatePostScreen(
     onRemoveAttachmentClick: (String) -> Unit,
     onSubmitClick: () -> Unit,
     onDeleteClick: () -> Unit,
+    focusComments: Boolean,
+    onCommentChanged: (String) -> Unit,
+    onSubmitCommentClick: () -> Unit,
 ) {
     val context = LocalContext.current
+    val listState = rememberLazyListState()
     var isPickerSheetOpen by remember { mutableStateOf(false) }
     var isDeleteDialogOpen by remember { mutableStateOf(false) }
     val errorBannerMessage =
@@ -203,8 +223,15 @@ internal fun CreatePostScreen(
             CreatePostMode.VIEW -> R.string.action_save_post
         }
 
+    LaunchedEffect(focusComments, isViewMode, uiState.isLoadingPost) {
+        if (focusComments && isViewMode && !uiState.isLoadingPost) {
+            listState.animateScrollToItem(COMMENTS_SECTION_ITEM_INDEX)
+        }
+    }
+
     Scaffold(containerColor = MaterialTheme.colorScheme.background) { paddingValues ->
         LazyColumn(
+            state = listState,
             modifier =
                 Modifier
                     .fillMaxSize()
@@ -425,6 +452,20 @@ internal fun CreatePostScreen(
                     )
                 }
             }
+            if (isViewMode) {
+                item {
+                    CommentsSection(
+                        comments = uiState.comments,
+                        commentInput = uiState.commentInput,
+                        isLoadingComments = uiState.isLoadingComments,
+                        isSubmittingComment = uiState.isSubmittingComment,
+                        commentErrorRes = uiState.commentErrorRes,
+                        focusComments = focusComments,
+                        onCommentChanged = onCommentChanged,
+                        onSubmitCommentClick = onSubmitCommentClick,
+                    )
+                }
+            }
             if (!isViewMode) {
                 item {
                     Button(
@@ -580,6 +621,174 @@ internal fun CreatePostScreen(
     }
 }
 
+@Composable
+private fun CommentsSection(
+    comments: List<RoomCommentUiState>,
+    commentInput: String,
+    isLoadingComments: Boolean,
+    isSubmittingComment: Boolean,
+    commentErrorRes: Int?,
+    focusComments: Boolean,
+    onCommentChanged: (String) -> Unit,
+    onSubmitCommentClick: () -> Unit,
+) {
+    val commentFocusRequester = remember { FocusRequester() }
+    val keyboardController = LocalSoftwareKeyboardController.current
+
+    LaunchedEffect(focusComments) {
+        if (focusComments) {
+            commentFocusRequester.requestFocus()
+            keyboardController?.show()
+        }
+    }
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+    ) {
+        Column(
+            modifier = Modifier.padding(20.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            Text(
+                text = stringResource(R.string.comments_title),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalAlignment = Alignment.Top,
+            ) {
+                OutlinedTextField(
+                    value = commentInput,
+                    onValueChange = onCommentChanged,
+                    modifier =
+                        Modifier
+                            .weight(1f)
+                            .focusRequester(commentFocusRequester),
+                    label = { Text(stringResource(R.string.label_comment)) },
+                    placeholder = { Text(stringResource(R.string.comment_input_placeholder)) },
+                    minLines = 2,
+                    maxLines = 5,
+                    isError = commentErrorRes != null,
+                    enabled = !isSubmittingComment,
+                )
+                Button(
+                    onClick = onSubmitCommentClick,
+                    enabled = !isSubmittingComment,
+                    modifier = Modifier.padding(top = 8.dp),
+                ) {
+                    if (isSubmittingComment) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(18.dp),
+                            strokeWidth = 2.dp,
+                        )
+                    } else {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Outlined.Send,
+                            contentDescription = stringResource(R.string.action_post_comment),
+                            modifier = Modifier.size(18.dp),
+                        )
+                    }
+                }
+            }
+            if (commentErrorRes != null) {
+                Text(
+                    text = stringResource(commentErrorRes),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
+            when {
+                isLoadingComments -> {
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(18.dp),
+                            strokeWidth = 2.dp,
+                        )
+                        Text(
+                            text = stringResource(R.string.comments_loading),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+
+                comments.isEmpty() -> {
+                    Text(
+                        text = stringResource(R.string.comments_empty),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+
+                else -> {
+                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        comments.forEach { comment ->
+                            CommentCard(comment = comment)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CommentCard(comment: RoomCommentUiState) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.large,
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.34f),
+    ) {
+        Row(
+            modifier = Modifier.padding(14.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.Top,
+        ) {
+            UserAvatar(
+                displayName = comment.authorName,
+                photoUrl = comment.authorPhotoUrl,
+                modifier = Modifier.size(38.dp),
+            )
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = comment.authorName,
+                        modifier = Modifier.weight(1f),
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        text = comment.createdAtEpochMillis.toCommentDateLabel(),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                    )
+                }
+                Text(
+                    text = comment.message,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+            }
+        }
+    }
+}
+
 private fun ContentResolver.resolveAttachment(uri: Uri): CreatePostAttachmentUiState {
     try {
         takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
@@ -635,6 +844,14 @@ private fun buildAttachmentSelectionErrorMessage(
 
 private fun Uri.readableAttachmentName(): String = lastPathSegment.orEmpty().ifBlank { "attachment" }
 
+private fun Long.toCommentDateLabel(): String {
+    if (this <= 0L) return "--"
+    return DateTimeFormatter
+        .ofPattern("d MMM, HH:mm", Locale.ENGLISH)
+        .format(Instant.ofEpochMilli(this).atZone(ZoneId.systemDefault()))
+}
+
+private const val COMMENTS_SECTION_ITEM_INDEX = 3
 private const val MAX_ATTACHMENT_SELECTION_ERROR_NAMES = 3
 
 @Composable
