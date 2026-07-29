@@ -1,9 +1,10 @@
 import { FieldValue } from "firebase-admin/firestore";
-import { GoogleGenAI } from "@google/genai";
+import { GoogleGenAI, ThinkingLevel } from "@google/genai";
 import { HttpsError, onCall } from "firebase-functions/v2/https";
 import {
   MAX_QUESTION_COUNT,
   DEFAULT_TOPIC,
+  FALLBACK_MODEL_NAME,
   FUNCTIONS_REGION,
   MODEL_NAME,
   QUIZ_GENERATION_TIMEOUT_SECONDS,
@@ -32,7 +33,17 @@ import {
   readRequiredString
 } from "./shared/validation.js";
 
-const AI_MODEL_BUSY_MESSAGE = "AI is busy right now. Please try again in a moment.";
+const AI_MODEL_BUSY_MESSAGE = "The AI service is temporarily unavailable. Please try again.";
+const AI_MODEL_NOT_FOUND_MESSAGE = "The configured AI model is unavailable. Please contact support.";
+const AI_RATE_LIMIT_MESSAGE = "The AI request limit has been reached. Please try again in a minute.";
+const AI_TIMEOUT_MESSAGE = "Quiz generation took too long. Please try again.";
+const AI_INVALID_RESPONSE_MESSAGE = "The AI returned an invalid quiz. Please try again.";
+const AI_GENERIC_FAILURE_MESSAGE = "Quiz generation failed. Please try again.";
+const AI_RETRY_DELAY_MILLIS = 1_500;
+const AI_GENERATION_ATTEMPTS = [
+  { model: MODEL_NAME, retryDelayMillis: 0 },
+  { model: FALLBACK_MODEL_NAME, retryDelayMillis: AI_RETRY_DELAY_MILLIS }
+] as const;
 
 // This file contains the quiz-generation flow powered by the Gemini model.
 export const generateQuizForRoom = onCall(
@@ -303,14 +314,64 @@ async function generateQuiz(input: {
     apiKey: geminiApiKey.value()
   });
 
-  const response = await ai.models.generateContent({
-    model: MODEL_NAME,
-    contents: buildQuizPrompt(input),
-    config: {
-      responseMimeType: "application/json",
-      responseSchema: buildQuizResponseSchema(input.questionCount, input.questionType)
+  const contents = buildQuizPrompt(input);
+  const config = {
+    httpOptions: {
+      retryOptions: {
+        attempts: 1
+      },
+      timeout: aiRequestTimeoutMillis(input.questionCount)
+    },
+    maxOutputTokens: aiMaxOutputTokens(input.questionCount),
+    responseMimeType: "application/json",
+    responseSchema: buildQuizResponseSchema(input.questionCount, input.questionType),
+    thinkingConfig: {
+      thinkingLevel: ThinkingLevel.MINIMAL
     }
-  });
+  };
+  let response: Awaited<ReturnType<typeof ai.models.generateContent>> | undefined;
+
+  for (const [attemptIndex, attempt] of AI_GENERATION_ATTEMPTS.entries()) {
+    if (attempt.retryDelayMillis > 0) {
+      await wait(attempt.retryDelayMillis);
+    }
+
+    try {
+      response = await ai.models.generateContent({
+        model: attempt.model,
+        contents,
+        config
+      });
+      console.info("Gemini quiz generation succeeded.", {
+        model: attempt.model,
+        attempt: attemptIndex + 1
+      });
+      break;
+    } catch (error) {
+      const isLastAttempt = attemptIndex === AI_GENERATION_ATTEMPTS.length - 1;
+      const isRetryable = isRetryableAiRequestError(error);
+      if (!isRetryable || isLastAttempt) {
+        console.error("Gemini quiz generation failed.", {
+          model: attempt.model,
+          attempt: attemptIndex + 1,
+          isRetryable,
+          error: toSafeErrorMessage(error)
+        });
+        throw error;
+      }
+
+      console.warn("Transient Gemini quiz generation error; retrying.", {
+        model: attempt.model,
+        attempt: attemptIndex + 1,
+        nextModel: AI_GENERATION_ATTEMPTS[attemptIndex + 1].model,
+        error: toSafeErrorMessage(error)
+      });
+    }
+  }
+
+  if (!response) {
+    throw new HttpsError("internal", "AI did not return a response.");
+  }
 
   const text = response.text?.trim();
   if (!text) {
@@ -435,27 +496,143 @@ function parseQuizJson(text: string): GeneratedQuiz {
 
 function toQuizGenerationFailureReason(error: unknown): string {
   if (error instanceof HttpsError) {
-    return error.message;
+    return error.code === "internal" ? AI_INVALID_RESPONSE_MESSAGE : error.message;
   }
 
-  if (error instanceof Error) {
-    if (isAiModelBusyError(error)) {
-      return AI_MODEL_BUSY_MESSAGE;
-    }
-    return error.message;
+  if (isAiModelNotFoundError(error)) {
+    return AI_MODEL_NOT_FOUND_MESSAGE;
+  }
+  if (isAiRateLimitError(error)) {
+    return AI_RATE_LIMIT_MESSAGE;
+  }
+  if (isAiTimeoutError(error)) {
+    return AI_TIMEOUT_MESSAGE;
+  }
+  if (isAiModelBusyError(error)) {
+    return AI_MODEL_BUSY_MESSAGE;
   }
 
-  return "Quiz generation failed.";
+  return AI_GENERIC_FAILURE_MESSAGE;
 }
 
-function isAiModelBusyError(error: Error): boolean {
-  const message = error.message.toLowerCase();
+function isAiModelBusyError(error: unknown): boolean {
+  const statusCode = readAiErrorStatusCode(error);
+  if (statusCode !== null && statusCode >= 500 && statusCode !== 504) {
+    return true;
+  }
+
+  const message = toSafeErrorMessage(error).toLowerCase();
   return (
     message.includes("503") ||
+    message.includes("internal") ||
+    message.includes("service unavailable") ||
+    message.includes("temporarily unavailable") ||
     message.includes("unavailable") ||
     message.includes("high demand") ||
     message.includes("overloaded")
   );
+}
+
+function isRetryableAiRequestError(error: unknown): boolean {
+  return (
+    isAiModelNotFoundError(error) ||
+    isAiRateLimitError(error) ||
+    isAiTimeoutError(error) ||
+    isAiModelBusyError(error)
+  );
+}
+
+function isAiModelNotFoundError(error: unknown): boolean {
+  const statusCode = readAiErrorStatusCode(error);
+  const message = toSafeErrorMessage(error).toLowerCase();
+  return (
+    statusCode === 404 ||
+    message.includes("\"code\":404") ||
+    message.includes("not_found") ||
+    message.includes("not found") ||
+    message.includes("model is no longer available")
+  );
+}
+
+function isAiRateLimitError(error: unknown): boolean {
+  const statusCode = readAiErrorStatusCode(error);
+  const message = toSafeErrorMessage(error).toLowerCase();
+  return (
+    statusCode === 429 ||
+    message.includes("\"code\":429") ||
+    message.includes("resource_exhausted") ||
+    message.includes("resource exhausted") ||
+    message.includes("rate limit") ||
+    message.includes("quota")
+  );
+}
+
+function isAiTimeoutError(error: unknown): boolean {
+  const statusCode = readAiErrorStatusCode(error);
+  const message = toSafeErrorMessage(error).toLowerCase();
+  return (
+    statusCode === 408 ||
+    statusCode === 504 ||
+    message.includes("\"code\":408") ||
+    message.includes("\"code\":504") ||
+    message.includes("deadline_exceeded") ||
+    message.includes("deadline exceeded") ||
+    message.includes("timeout") ||
+    message.includes("timed out")
+  );
+}
+
+function readAiErrorStatusCode(error: unknown): number | null {
+  if (typeof error !== "object" || error === null) {
+    return null;
+  }
+
+  const candidate = error as {
+    code?: unknown;
+    status?: unknown;
+    error?: unknown;
+  };
+  for (const value of [candidate.code, candidate.status]) {
+    if (typeof value === "number") {
+      return value;
+    }
+    if (typeof value === "string" && /^\d{3}$/.test(value)) {
+      return Number(value);
+    }
+  }
+
+  return candidate.error === error ? null : readAiErrorStatusCode(candidate.error);
+}
+
+function toSafeErrorMessage(error: unknown): string {
+  if (error instanceof Error) {
+    return error.message;
+  }
+  if (typeof error === "string") {
+    return error;
+  }
+
+  return "Unknown Gemini API error";
+}
+
+function wait(durationMillis: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, durationMillis);
+  });
+}
+
+function aiRequestTimeoutMillis(questionCount: number): number {
+  if (questionCount <= 10) {
+    return 20_000;
+  }
+  if (questionCount <= 25) {
+    return 30_000;
+  }
+  return 45_000;
+}
+
+function aiMaxOutputTokens(questionCount: number): number {
+  return Math.min(24_000, Math.max(2_000, questionCount * 400));
 }
 
 async function loadRoomForQuizGeneration(roomId: string, userId: string) {
