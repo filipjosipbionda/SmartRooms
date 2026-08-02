@@ -38,6 +38,7 @@ internal data class RoomAnnouncementCardUiState(
     val title: String,
     val message: String,
     val authorName: String,
+    val authorPhotoUrl: String? = null,
     val attachments: List<RoomAnnouncementAttachment>,
     val commentCount: Int,
     val latestComment: RoomCommentPreviewUiState?,
@@ -156,6 +157,7 @@ internal class RoomDetailViewModel(
     private val currentUser = authRepository.getCurrentUser()
     private val currentUserId = currentUser?.uid.orEmpty()
     private var inviteSearchJob: Job? = null
+    private var announcementProfilesJob: Job? = null
     private var leaderboardJob: Job? = null
     private var membersJob: Job? = null
     private var observedLeaderboardMemberIds: List<String> = emptyList()
@@ -165,6 +167,8 @@ internal class RoomDetailViewModel(
     private var latestLeaderboardStudents: List<RoomQuizLeaderboardStudent> = emptyList()
     private var latestMembers: List<RoomMember> = emptyList()
     private var latestAnnouncements: List<RoomAnnouncement> = emptyList()
+    private var latestAnnouncementProfilesById: Map<String, UserProfile> = emptyMap()
+    private var observedAnnouncementAuthorIds: List<String> = emptyList()
     private var areQuizzesLoaded = false
     private var isLeaderboardLoaded = false
     private var areMembersLoaded = false
@@ -502,6 +506,7 @@ internal class RoomDetailViewModel(
                         areAnnouncementsLoaded = true
                         announcementsErrorMessageRes = null
                         publishAnnouncementState()
+                        refreshAnnouncementProfilesObserver()
                     }
 
                     is RoomOperationResult.Error -> {
@@ -662,6 +667,7 @@ internal class RoomDetailViewModel(
                             announcement.toAnnouncementCardUiState(
                                 currentUserId = currentUserId,
                                 canCurrentUserManagePosts = state.canManagePosts,
+                                currentProfile = latestAnnouncementProfilesById[announcement.authorId],
                             )
                         }.sortedByDescending(RoomAnnouncementCardUiState::createdAtEpochMillis),
                 isLoadingFeed = !areAnnouncementsLoaded,
@@ -776,6 +782,34 @@ internal class RoomDetailViewModel(
         }
     }
 
+    private fun refreshAnnouncementProfilesObserver() {
+        val authorIds =
+            latestAnnouncements
+                .map(RoomAnnouncement::authorId)
+                .distinct()
+                .filter(String::isNotBlank)
+        if (authorIds == observedAnnouncementAuthorIds && announcementProfilesJob != null) return
+
+        announcementProfilesJob?.cancel()
+        observedAnnouncementAuthorIds = authorIds
+        latestAnnouncementProfilesById = emptyMap()
+        publishAnnouncementState()
+        if (authorIds.isEmpty()) {
+            announcementProfilesJob = null
+            return
+        }
+
+        announcementProfilesJob =
+            viewModelScope.launch {
+                userProfileRepository.observeProfiles(authorIds).collect { result ->
+                    if (result is UserProfileOperationResult.Success) {
+                        latestAnnouncementProfilesById = result.data.associateBy(UserProfile::uid)
+                        publishAnnouncementState()
+                    }
+                }
+            }
+    }
+
     private fun currentDataError(): Int? =
         roomErrorMessageRes ?: profileErrorMessageRes ?: announcementsErrorMessageRes ?: quizzesErrorMessageRes
             ?: quizResultsErrorMessageRes ?: quizLeaderboardErrorMessageRes ?: membersErrorMessageRes
@@ -784,13 +818,15 @@ internal class RoomDetailViewModel(
 private fun RoomAnnouncement.toAnnouncementCardUiState(
     currentUserId: String,
     canCurrentUserManagePosts: Boolean,
+    currentProfile: UserProfile?,
 ): RoomAnnouncementCardUiState =
     RoomAnnouncementCardUiState(
         id = id,
         createdAtEpochMillis = createdAtEpochMillis,
         title = title,
         message = message,
-        authorName = authorName,
+        authorName = currentProfile?.displayName ?: authorName,
+        authorPhotoUrl = currentProfile?.photoUrl,
         attachments = attachments,
         commentCount = commentCount,
         latestComment = latestComment?.toUiState(),

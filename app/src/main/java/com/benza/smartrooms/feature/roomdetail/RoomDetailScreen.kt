@@ -1066,6 +1066,7 @@ private fun AnnouncementCard(
         createdAt = item.createdAtEpochMillis.toRoomDateLabel(),
         backgroundColor = Lagoon.copy(alpha = 0.08f),
         authorName = item.authorName,
+        authorPhotoUrl = item.authorPhotoUrl,
         onClick = onClick,
         actions =
             if (item.canManage) {
@@ -1539,6 +1540,7 @@ private fun FeedCardShell(
     accentBrush: Brush? = null,
     backgroundColor: Color? = null,
     authorName: String? = null,
+    authorPhotoUrl: String? = null,
     onClick: (() -> Unit)? = null,
     actions: (@Composable () -> Unit)? = null,
     content: @Composable ColumnScope.() -> Unit,
@@ -1587,7 +1589,10 @@ private fun FeedCardShell(
                         Spacer(modifier = Modifier.weight(1f))
                         actions?.invoke()
                     }
-                    PostAuthorHeader(authorName = authorName)
+                    PostAuthorHeader(
+                        authorName = authorName,
+                        authorPhotoUrl = authorPhotoUrl,
+                    )
                 } else {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -1620,6 +1625,7 @@ private fun FeedCardShell(
 @Composable
 private fun PostAuthorHeader(
     authorName: String,
+    authorPhotoUrl: String?,
     modifier: Modifier = Modifier,
 ) {
     Row(
@@ -1629,7 +1635,7 @@ private fun PostAuthorHeader(
     ) {
         UserAvatar(
             displayName = authorName,
-            photoUrl = null,
+            photoUrl = authorPhotoUrl,
             modifier = Modifier.size(34.dp),
         )
         Text(

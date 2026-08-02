@@ -315,6 +315,11 @@
     <string name="room_quiz_player_your_answer_label">Your answer</string>
     <string name="room_quiz_player_correct_answer_label">Correct answer</string>
     <string name="profile_title">Profile</string>
+    <string name="profile_photo_choose">Choose profile photo</string>
+    <string name="profile_photo_change">Change profile photo</string>
+    <string name="profile_photo_uploading">Uploading photo…</string>
+    <string name="profile_photo_updated">Profile photo updated.</string>
+    <string name="profile_photo_edit_content_description">Choose a profile photo from the gallery</string>
     <string name="profile_role_title">Role</string>
     <string name="profile_role_label">Account type</string>
     <string name="profile_role_student">Student</string>
@@ -406,7 +411,10 @@
     <string name="role_student_description">Join rooms, follow class updates, and solve quizzes assigned by professors.</string>
     <string name="error_user_profile_auth_required">Sign in again to finish setting up your profile.</string>
     <string name="error_user_profile_permission">You do not have permission to access your profile.</string>
+    <string name="error_profile_photo_permission">Firebase Storage did not allow this photo upload.</string>
     <string name="error_user_profile_unavailable">Profile storage is temporarily unavailable. Try again.</string>
     <string name="error_user_profile_network">Unable to reach profile storage. Check your connection.</string>
     <string name="error_user_profile_generic">Profile setup failed. Try again.</string>
+    <string name="error_profile_photo_invalid">Select a valid image from your gallery.</string>
+    <string name="error_profile_photo_upload">Profile photo could not be uploaded. Try again.</string>
 </resources>

@@ -7,6 +7,7 @@ import com.benza.smartrooms.data.userprofile.model.UserRole
 import com.benza.smartrooms.util.orPrettyEmailLocalPart
 import com.google.android.gms.tasks.Task
 import com.google.firebase.firestore.DocumentSnapshot
+import com.google.firebase.firestore.FieldPath
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.SetOptions
 import kotlinx.coroutines.Dispatchers
@@ -104,6 +105,45 @@ internal class FirestoreUserProfileDataSource(
                 }
 
             awaitClose { registration.remove() }
+        }
+
+    /**
+     * Observes current profile data for a group of users. This keeps shared avatars current instead
+     * of relying on profile URLs copied into comments or other documents.
+     */
+    internal fun observeProfiles(userIds: List<String>): Flow<List<UserProfile>> =
+        callbackFlow {
+            val orderedUserIds = userIds.distinct().filter(String::isNotBlank)
+            if (orderedUserIds.isEmpty()) {
+                trySend(emptyList())
+                awaitClose()
+                return@callbackFlow
+            }
+
+            val profilesById = mutableMapOf<String, UserProfile>()
+            val registrations =
+                orderedUserIds.chunked(MAX_PROFILE_QUERY_SIZE).map { userIdChunk ->
+                    firestore
+                        .collection(USERS_COLLECTION)
+                        .whereIn(FieldPath.documentId(), userIdChunk)
+                        .addSnapshotListener(FIRESTORE_CALLBACK_EXECUTOR) { snapshot, error ->
+                            if (error != null) {
+                                close(error)
+                                return@addSnapshotListener
+                            }
+
+                            userIdChunk.forEach(profilesById::remove)
+                            snapshot
+                                ?.documents
+                                .orEmpty()
+                                .forEach { document ->
+                                    profilesById[document.id] = document.toUserProfile(document.toFallbackAuthUser())
+                                }
+                            trySend(orderedUserIds.mapNotNull(profilesById::get))
+                        }
+                }
+
+            awaitClose { registrations.forEach { it.remove() } }
         }
 
     /**
@@ -229,6 +269,37 @@ internal class FirestoreUserProfileDataSource(
                 SetOptions.merge(),
             ).await()
     }
+
+    /**
+     * Stores the public download URL and the owned Storage object path on the user's document.
+     * Returns the previous owned object path so it can be removed after a successful update.
+     */
+    internal suspend fun updateProfilePhoto(
+        userId: String,
+        photoUrl: String,
+        storagePath: String,
+    ): String? {
+        val document = firestore.collection(USERS_COLLECTION).document(userId)
+        val previousStoragePath =
+            document
+                .get()
+                .await()
+                .getString(PROFILE_PHOTO_STORAGE_PATH_FIELD)
+                ?.takeIf(String::isNotBlank)
+
+        document
+            .set(
+                mapOf(
+                    UID_FIELD to userId,
+                    PHOTO_URL_FIELD to photoUrl,
+                    PROFILE_PHOTO_STORAGE_PATH_FIELD to storagePath,
+                    UPDATED_AT_FIELD to System.currentTimeMillis(),
+                ),
+                SetOptions.merge(),
+            ).await()
+
+        return previousStoragePath
+    }
 }
 
 private fun DocumentSnapshot.toUserProfile(fallbackUser: AuthUser): UserProfile {
@@ -258,7 +329,7 @@ private fun DocumentSnapshot.toResolvedUserProfile(user: AuthUser): UserProfile 
 
     return existingProfile.copy(
         email = authEmail.ifBlank { existingProfile.email },
-        photoUrl = user.photoUrl ?: existingProfile.photoUrl,
+        photoUrl = existingProfile.photoUrl ?: user.photoUrl,
         displayName =
             authDisplayName
                 ?: existingProfile.displayName.takeIf(String::isNotBlank)
@@ -368,6 +439,14 @@ private fun String.searchTokens(): List<String> = split(SEARCH_TOKEN_DELIMITERS)
 
 private fun DocumentSnapshot.getIdOrUid(): String = getString(UID_FIELD).orEmpty().ifBlank { id }
 
+private fun DocumentSnapshot.toFallbackAuthUser(): AuthUser =
+    AuthUser(
+        uid = id,
+        email = getString(EMAIL_FIELD),
+        displayName = getString(DISPLAY_NAME_FIELD),
+        photoUrl = getString(PHOTO_URL_FIELD),
+    )
+
 private data class SearchFallbackData(
     val email: String?,
     val displayName: String?,
@@ -393,6 +472,7 @@ private const val UID_FIELD = "uid"
 private const val EMAIL_FIELD = "email"
 private const val DISPLAY_NAME_FIELD = "displayName"
 private const val PHOTO_URL_FIELD = "photoUrl"
+private const val PROFILE_PHOTO_STORAGE_PATH_FIELD = "photoStoragePath"
 private const val ROLE_FIELD = "role"
 private const val PROFILE_COMPLETE_FIELD = "profileComplete"
 private const val TEACHER_APPROVAL_STATUS_FIELD = "teacherApprovalStatus"
@@ -404,4 +484,5 @@ private const val TEACHER_ROLE = "teacher"
 private const val STUDENT_ROLE = "student"
 private const val MIN_SEARCH_QUERY_LENGTH = 2
 private const val MAX_SEARCH_RESULTS = 12
+private const val MAX_PROFILE_QUERY_SIZE = 10
 private val SEARCH_TOKEN_DELIMITERS = Regex("[\\s@._-]+")

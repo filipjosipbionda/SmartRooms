@@ -27,7 +27,10 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -38,8 +41,9 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import coil.compose.AsyncImagePainter
-import coil.compose.rememberAsyncImagePainter
+import coil.compose.AsyncImage
+import coil.request.CachePolicy
+import coil.request.ImageRequest
 
 @Composable
 internal fun AttachmentPreview(
@@ -50,12 +54,23 @@ internal fun AttachmentPreview(
 ) {
     val context = LocalContext.current
     val source = model?.toString()
-    val imagePainter =
+    val imageRequest =
         if (mimeType.startsWith("image/") && model != null) {
-            rememberAsyncImagePainter(model = model)
+            remember(context, model) {
+                ImageRequest
+                    .Builder(context)
+                    .data(model)
+                    .crossfade(THUMBNAIL_CROSSFADE_MILLIS)
+                    .memoryCachePolicy(CachePolicy.ENABLED)
+                    .diskCachePolicy(CachePolicy.ENABLED)
+                    .build()
+            }
         } else {
             null
         }
+    var imagePreviewState by remember(imageRequest) {
+        mutableStateOf(ImagePreviewState.Loading)
+    }
     val initialPdfState =
         if (mimeType.isPdfMimeType() && source != null) {
             PdfThumbnailLoader
@@ -85,24 +100,24 @@ internal fun AttachmentPreview(
     }
 
     when {
-        imagePainter != null -> {
+        imageRequest != null -> {
             Surface(
                 modifier = modifier,
                 shape = RoundedCornerShape(14.dp),
                 color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
             ) {
                 Box(modifier = Modifier.fillMaxSize()) {
-                    when (imagePainter.state) {
-                        is AsyncImagePainter.State.Success -> {
-                            Image(
-                                painter = imagePainter,
-                                contentDescription = fileName,
-                                modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(14.dp)),
-                                contentScale = ContentScale.Crop,
-                            )
-                        }
-
-                        is AsyncImagePainter.State.Error -> {
+                    AsyncImage(
+                        model = imageRequest,
+                        contentDescription = fileName,
+                        modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(14.dp)),
+                        contentScale = ContentScale.Crop,
+                        onLoading = { imagePreviewState = ImagePreviewState.Loading },
+                        onSuccess = { imagePreviewState = ImagePreviewState.Loaded },
+                        onError = { imagePreviewState = ImagePreviewState.Failed },
+                    )
+                    when (imagePreviewState) {
+                        ImagePreviewState.Failed -> {
                             FileAttachmentFallback(
                                 modifier = Modifier.fillMaxSize(),
                                 mimeType = mimeType,
@@ -110,9 +125,11 @@ internal fun AttachmentPreview(
                             )
                         }
 
-                        else -> {
+                        ImagePreviewState.Loading -> {
                             AttachmentPreviewLoadingPlaceholder(modifier = Modifier.fillMaxSize())
                         }
+
+                        ImagePreviewState.Loaded -> Unit
                     }
                 }
             }
@@ -304,6 +321,12 @@ private sealed interface PdfPreviewState {
     ) : PdfPreviewState
 }
 
+private enum class ImagePreviewState {
+    Loading,
+    Loaded,
+    Failed,
+}
+
 private data class FileFallbackStyle(
     val label: String,
     val icon: ImageVector,
@@ -341,3 +364,5 @@ private fun String.isDocumentMimeType(): Boolean = contains("word") || contains(
 private fun String.isSpreadsheetMimeType(): Boolean = contains("sheet") || contains("excel")
 
 private fun String.isPresentationMimeType(): Boolean = contains("presentation") || contains("powerpoint")
+
+private const val THUMBNAIL_CROSSFADE_MILLIS = 140

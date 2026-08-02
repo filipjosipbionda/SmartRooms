@@ -34,7 +34,6 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -45,6 +44,7 @@ import com.benza.smartrooms.R
 import com.benza.smartrooms.data.room.model.RoomInvitationAccess
 import com.benza.smartrooms.ui.components.AuthFeedbackBanner
 import com.benza.smartrooms.ui.components.AuthFeedbackType
+import com.benza.smartrooms.ui.components.UserAvatar
 import com.benza.smartrooms.ui.theme.Coral
 import com.benza.smartrooms.ui.theme.Lagoon
 import com.benza.smartrooms.ui.theme.SmartRoomsTheme
@@ -111,6 +111,8 @@ internal fun HomeScreen(
                 Box(modifier = Modifier.padding(horizontal = 20.dp)) {
                     HomeHeader(
                         profileInitials = uiState.profileInitials,
+                        profileDisplayName = uiState.profileDisplayName,
+                        profilePhotoUrl = uiState.profilePhotoUrl,
                         onProfileClick = onProfileClick,
                     )
                 }
@@ -197,6 +199,8 @@ internal fun HomeScreen(
 @Composable
 private fun HomeHeader(
     profileInitials: String,
+    profileDisplayName: String,
+    profilePhotoUrl: String?,
     onProfileClick: () -> Unit,
 ) {
     Card(
@@ -224,25 +228,11 @@ private fun HomeHeader(
                 modifier = Modifier.size(48.dp),
                 onClick = onProfileClick,
             ) {
-                Box(
-                    modifier =
-                        Modifier
-                            .size(44.dp)
-                            .clip(CircleShape)
-                            .background(
-                                brush =
-                                    Brush.linearGradient(
-                                        colors = listOf(Lagoon, Coral),
-                                    ),
-                            ),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text(
-                        text = profileInitials,
-                        style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.onPrimary,
-                    )
-                }
+                UserAvatar(
+                    displayName = profileDisplayName.ifBlank { profileInitials },
+                    photoUrl = profilePhotoUrl,
+                    modifier = Modifier.size(44.dp),
+                )
             }
         }
     }
@@ -609,6 +599,7 @@ private fun HomeScreenPreview() {
             uiState =
                 HomeUiState(
                     profileInitials = "FB",
+                    profileDisplayName = "Filip Benza",
                     joinedRoomsCount = 6,
                     unansweredQuizCount = 7,
                     rooms =

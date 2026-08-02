@@ -26,9 +26,23 @@ internal interface UserProfileRepository {
     fun observeProfile(user: AuthUser): Flow<UserProfileOperationResult<UserProfile>>
 
     /**
+     * Observes the latest profile documents for users whose avatars are shown together.
+     */
+    fun observeProfiles(userIds: List<String>): Flow<UserProfileOperationResult<List<UserProfile>>>
+
+    /**
      * Searches user profiles by display name or email.
      */
     suspend fun searchProfiles(query: String): UserProfileOperationResult<List<UserProfile>>
+
+    /**
+     * Uploads a locally selected image and saves its public URL on the Firestore profile.
+     */
+    suspend fun updateProfilePhoto(
+        userId: String,
+        localUri: String,
+        mimeType: String?,
+    ): UserProfileOperationResult<String>
 
     /**
      * Persists the student role for the supplied user and completes onboarding.

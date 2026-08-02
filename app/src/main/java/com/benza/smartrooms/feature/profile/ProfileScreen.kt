@@ -1,5 +1,8 @@
 package com.benza.smartrooms.feature.profile
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -14,10 +17,10 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -27,12 +30,13 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -42,8 +46,7 @@ import com.benza.smartrooms.data.userprofile.model.TeacherApprovalStatus
 import com.benza.smartrooms.data.userprofile.model.UserRole
 import com.benza.smartrooms.ui.components.AuthFeedbackBanner
 import com.benza.smartrooms.ui.components.AuthFeedbackType
-import com.benza.smartrooms.ui.theme.Coral
-import com.benza.smartrooms.ui.theme.Lagoon
+import com.benza.smartrooms.ui.components.UserAvatar
 import org.koin.androidx.compose.koinViewModel
 
 /**
@@ -56,10 +59,27 @@ internal fun ProfileRouteScreen(
     viewModel: ProfileViewModel = koinViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val context = LocalContext.current
+    val photoPicker =
+        rememberLauncherForActivityResult(
+            contract = ActivityResultContracts.PickVisualMedia(),
+        ) { uri ->
+            uri?.let {
+                viewModel.updateProfilePhoto(
+                    localUri = it.toString(),
+                    mimeType = context.contentResolver.getType(it),
+                )
+            }
+        }
 
     ProfileScreen(
         uiState = uiState,
         onBackClick = onBackClick,
+        onProfilePhotoClick = {
+            photoPicker.launch(
+                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
+            )
+        },
         onLogoutClick = {
             viewModel.logout()
             onLoggedOut()
@@ -74,6 +94,7 @@ internal fun ProfileRouteScreen(
 internal fun ProfileScreen(
     uiState: ProfileUiState,
     onBackClick: () -> Unit,
+    onProfilePhotoClick: () -> Unit,
     onLogoutClick: () -> Unit,
 ) {
     LazyColumn(
@@ -88,13 +109,24 @@ internal fun ProfileScreen(
             ProfileTopBar(onBackClick = onBackClick)
         }
         item {
-            ProfileHeroCard(uiState = uiState)
+            ProfileHeroCard(
+                uiState = uiState,
+                onProfilePhotoClick = onProfilePhotoClick,
+            )
         }
         if (uiState.errorMessageRes != null) {
             item {
                 AuthFeedbackBanner(
                     message = stringResource(uiState.errorMessageRes),
                     type = AuthFeedbackType.Error,
+                )
+            }
+        }
+        if (uiState.infoMessageRes != null) {
+            item {
+                AuthFeedbackBanner(
+                    message = stringResource(uiState.infoMessageRes),
+                    type = AuthFeedbackType.Success,
                 )
             }
         }
@@ -130,7 +162,10 @@ private fun ProfileTopBar(onBackClick: () -> Unit) {
 }
 
 @Composable
-private fun ProfileHeroCard(uiState: ProfileUiState) {
+private fun ProfileHeroCard(
+    uiState: ProfileUiState,
+    onProfilePhotoClick: () -> Unit,
+) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(28.dp),
@@ -146,26 +181,57 @@ private fun ProfileHeroCard(uiState: ProfileUiState) {
                     .padding(24.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            Box(
-                modifier =
-                    Modifier
-                        .size(88.dp)
-                        .clip(CircleShape)
-                        .background(
-                            brush =
-                                Brush.linearGradient(
-                                    colors = listOf(Lagoon, Coral),
-                                ),
-                        ),
-                contentAlignment = Alignment.Center,
+            Box(contentAlignment = Alignment.BottomEnd) {
+                UserAvatar(
+                    displayName = uiState.displayName,
+                    photoUrl = uiState.pendingPhotoUri ?: uiState.photoUrl,
+                    modifier =
+                        Modifier
+                            .size(88.dp)
+                            .alpha(if (uiState.isUploadingPhoto) 0.55f else 1f),
+                )
+                Surface(
+                    shape = androidx.compose.foundation.shape.CircleShape,
+                    color = MaterialTheme.colorScheme.primary,
+                    shadowElevation = 4.dp,
+                ) {
+                    IconButton(
+                        onClick = onProfilePhotoClick,
+                        enabled = !uiState.isUploadingPhoto,
+                        modifier = Modifier.size(36.dp),
+                    ) {
+                        if (uiState.isUploadingPhoto) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(18.dp),
+                                color = MaterialTheme.colorScheme.onPrimary,
+                                strokeWidth = 2.dp,
+                            )
+                        } else {
+                            Icon(
+                                imageVector = Icons.Filled.PhotoCamera,
+                                contentDescription =
+                                    stringResource(R.string.profile_photo_edit_content_description),
+                                tint = MaterialTheme.colorScheme.onPrimary,
+                                modifier = Modifier.size(19.dp),
+                            )
+                        }
+                    }
+                }
+            }
+            TextButton(
+                onClick = onProfilePhotoClick,
+                enabled = !uiState.isUploadingPhoto,
             ) {
                 Text(
-                    text = uiState.initials,
-                    style = MaterialTheme.typography.headlineMedium,
-                    color = MaterialTheme.colorScheme.onPrimary,
+                    text =
+                        when {
+                            uiState.isUploadingPhoto -> stringResource(R.string.profile_photo_uploading)
+                            uiState.photoUrl.isNullOrBlank() -> stringResource(R.string.profile_photo_choose)
+                            else -> stringResource(R.string.profile_photo_change)
+                        },
                 )
             }
-            Spacer(modifier = Modifier.height(18.dp))
+            Spacer(modifier = Modifier.height(6.dp))
             Text(
                 text = uiState.displayName,
                 style = MaterialTheme.typography.titleLarge,

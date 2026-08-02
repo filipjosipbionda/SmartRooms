@@ -14,10 +14,12 @@ import com.benza.smartrooms.data.room.model.RoomComment
 import com.benza.smartrooms.data.room.model.RoomOperationResult
 import com.benza.smartrooms.data.room.model.UpdateAnnouncementRequest
 import com.benza.smartrooms.data.room.repository.RoomRepository
+import com.benza.smartrooms.data.userprofile.model.UserProfile
 import com.benza.smartrooms.data.userprofile.model.UserProfileOperationResult
 import com.benza.smartrooms.data.userprofile.model.UserRole
 import com.benza.smartrooms.data.userprofile.repository.UserProfileRepository
 import com.benza.smartrooms.util.orPrettyEmailLocalPart
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -46,6 +48,7 @@ internal data class CreatePostAttachmentUiState(
 
 internal data class RoomCommentUiState(
     val id: String,
+    val authorId: String,
     val authorName: String,
     val authorPhotoUrl: String?,
     val message: String,
@@ -92,6 +95,11 @@ internal class CreatePostViewModel(
     private var originalRemoteAttachments: List<RoomAnnouncementAttachment> = emptyList()
     private var originalAnnouncement: RoomAnnouncement? = null
     private var currentUserRole: UserRole? = null
+    private var currentUserProfile: UserProfile? = null
+    private var latestComments: List<RoomComment> = emptyList()
+    private var latestCommentProfilesById: Map<String, UserProfile> = emptyMap()
+    private var observedCommentAuthorIds: List<String> = emptyList()
+    private var commentProfilesJob: Job? = null
 
     private val _uiState =
         MutableStateFlow(
@@ -374,6 +382,7 @@ internal class CreatePostViewModel(
         }
 
         viewModelScope.launch {
+            val profile = currentUserProfile
             when (
                 val result =
                     roomRepository.createAnnouncementComment(
@@ -381,8 +390,8 @@ internal class CreatePostViewModel(
                             roomId = state.roomId,
                             announcementId = announcementId,
                             authorId = user.uid,
-                            authorName = user.displayNameOrEmailName(),
-                            authorPhotoUrl = user.photoUrl,
+                            authorName = profile?.displayName ?: user.displayNameOrEmailName(),
+                            authorPhotoUrl = profile?.photoUrl ?: user.photoUrl,
                             message = message,
                         ),
                     )
@@ -514,14 +523,16 @@ internal class CreatePostViewModel(
             roomRepository.observeAnnouncementComments(_uiState.value.roomId, announcementId).collect { result ->
                 when (result) {
                     is RoomOperationResult.Success -> {
+                        latestComments = result.data
                         _uiState.update {
                             it.copy(
-                                comments = result.data.map(RoomComment::toUiState),
                                 isLoadingComments = false,
                                 errorMessageRes = null,
                                 errorMessageText = null,
                             )
                         }
+                        publishComments()
+                        refreshCommentProfilesObserver()
                     }
 
                     is RoomOperationResult.Error -> {
@@ -562,7 +573,10 @@ internal class CreatePostViewModel(
             userProfileRepository.observeProfile(user).collect { result ->
                 currentUserRole =
                     when (result) {
-                        is UserProfileOperationResult.Success -> result.data.role
+                        is UserProfileOperationResult.Success -> {
+                            currentUserProfile = result.data
+                            result.data.role
+                        }
                         is UserProfileOperationResult.Error -> null
                     }
                 val announcement = originalAnnouncement ?: return@collect
@@ -575,6 +589,45 @@ internal class CreatePostViewModel(
                     )
                 }
             }
+        }
+    }
+
+    private fun refreshCommentProfilesObserver() {
+        val authorIds =
+            latestComments
+                .map(RoomComment::authorId)
+                .distinct()
+                .filter(String::isNotBlank)
+        if (authorIds == observedCommentAuthorIds && commentProfilesJob != null) return
+
+        commentProfilesJob?.cancel()
+        observedCommentAuthorIds = authorIds
+        latestCommentProfilesById = emptyMap()
+        publishComments()
+        if (authorIds.isEmpty()) {
+            commentProfilesJob = null
+            return
+        }
+
+        commentProfilesJob =
+            viewModelScope.launch {
+                userProfileRepository.observeProfiles(authorIds).collect { result ->
+                    if (result is UserProfileOperationResult.Success) {
+                        latestCommentProfilesById = result.data.associateBy(UserProfile::uid)
+                        publishComments()
+                    }
+                }
+            }
+    }
+
+    private fun publishComments() {
+        _uiState.update { state ->
+            state.copy(
+                comments =
+                    latestComments.map { comment ->
+                        comment.toUiState(latestCommentProfilesById[comment.authorId])
+                    },
+            )
         }
     }
 
@@ -610,11 +663,12 @@ private fun RoomAnnouncementAttachment.toUiState(): CreatePostAttachmentUiState 
         downloadUrl = downloadUrl,
     )
 
-private fun RoomComment.toUiState(): RoomCommentUiState =
+private fun RoomComment.toUiState(currentProfile: UserProfile?): RoomCommentUiState =
     RoomCommentUiState(
         id = id,
-        authorName = authorName,
-        authorPhotoUrl = authorPhotoUrl,
+        authorId = authorId,
+        authorName = currentProfile?.displayName ?: authorName,
+        authorPhotoUrl = currentProfile?.photoUrl ?: authorPhotoUrl,
         message = message,
         createdAtEpochMillis = createdAtEpochMillis,
     )

@@ -10,6 +10,8 @@ import com.benza.smartrooms.data.room.model.RoomInvitation
 import com.benza.smartrooms.data.room.model.RoomInvitationAccess
 import com.benza.smartrooms.data.room.model.RoomOperationResult
 import com.benza.smartrooms.data.room.repository.RoomRepository
+import com.benza.smartrooms.data.userprofile.model.UserProfileOperationResult
+import com.benza.smartrooms.data.userprofile.repository.UserProfileRepository
 import com.benza.smartrooms.util.orPrettyEmailLocalPart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -53,6 +55,8 @@ internal data class HomeInvitationUiState(
  */
 internal data class HomeUiState(
     val profileInitials: String = "?",
+    val profileDisplayName: String = "",
+    val profilePhotoUrl: String? = null,
     val joinedRoomsCount: Int = 0,
     val unansweredQuizCount: Int = 0,
     val rooms: List<HomeRoomUiState> = emptyList(),
@@ -72,6 +76,7 @@ internal data class HomeUiState(
 internal class HomeViewModel(
     authRepository: AuthRepository,
     private val roomRepository: RoomRepository,
+    private val userProfileRepository: UserProfileRepository,
 ) : ViewModel() {
     private val currentUser = authRepository.getCurrentUser()
 
@@ -79,6 +84,8 @@ internal class HomeViewModel(
         MutableStateFlow(
             HomeUiState(
                 profileInitials = currentUser.toInitials(),
+                profileDisplayName = currentUser.displayNameOrFallback(),
+                profilePhotoUrl = currentUser?.photoUrl,
                 isLoadingRooms = currentUser != null,
                 errorMessageRes = if (currentUser == null) R.string.error_room_auth_required else null,
             ),
@@ -86,8 +93,27 @@ internal class HomeViewModel(
     val uiState: StateFlow<HomeUiState> = _uiState.asStateFlow()
 
     init {
+        observeProfile()
         observeRooms()
         observePendingInvitations()
+    }
+
+    private fun observeProfile() {
+        val user = currentUser ?: return
+
+        viewModelScope.launch {
+            userProfileRepository.observeProfile(user).collect { result ->
+                if (result is UserProfileOperationResult.Success) {
+                    _uiState.update {
+                        it.copy(
+                            profileInitials = result.data.displayName.toInitials(),
+                            profileDisplayName = result.data.displayName,
+                            profilePhotoUrl = result.data.photoUrl,
+                        )
+                    }
+                }
+            }
+        }
     }
 
     /**
@@ -316,13 +342,16 @@ private fun HomeUiState.withPagination(currentPage: Int): HomeUiState {
     )
 }
 
-private fun AuthUser?.toInitials(): String =
-    (
-        this
-            ?.displayName
-            ?.takeIf(String::isNotBlank)
-            ?: this?.email.orPrettyEmailLocalPart(this?.email)
-    ).split(" ")
+private fun AuthUser?.toInitials(): String = displayNameOrFallback().toInitials()
+
+private fun AuthUser?.displayNameOrFallback(): String =
+    this
+        ?.displayName
+        ?.takeIf(String::isNotBlank)
+        ?: this?.email.orPrettyEmailLocalPart(this?.email)
+
+private fun String.toInitials(): String =
+    split(" ")
         .filter(String::isNotBlank)
         .take(2)
         .joinToString("") { it.take(1).uppercase() }

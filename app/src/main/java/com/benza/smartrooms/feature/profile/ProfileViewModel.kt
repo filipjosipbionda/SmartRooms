@@ -26,6 +26,8 @@ internal data class ProfileUiState(
     val displayName: String = "",
     val email: String = "",
     val initials: String = "?",
+    val photoUrl: String? = null,
+    val pendingPhotoUri: String? = null,
     val role: UserRole? = null,
     val teacherApprovalStatus: TeacherApprovalStatus = TeacherApprovalStatus.NONE,
     val ownedRoomCount: Int = 0,
@@ -33,6 +35,8 @@ internal data class ProfileUiState(
     val collaboratingRoomCount: Int = 0,
     val isLoadingProfile: Boolean = true,
     val isLoadingRooms: Boolean = true,
+    val isUploadingPhoto: Boolean = false,
+    val infoMessageRes: Int? = null,
     val errorMessageRes: Int? = null,
 )
 
@@ -52,6 +56,7 @@ internal class ProfileViewModel(
                 displayName = currentUser.displayNameOrFallback(),
                 email = currentUser?.email.orEmpty(),
                 initials = currentUser.toInitials(),
+                photoUrl = currentUser?.photoUrl,
                 isLoadingProfile = currentUser != null,
                 isLoadingRooms = currentUser != null,
                 errorMessageRes = if (currentUser == null) R.string.error_user_profile_auth_required else null,
@@ -71,6 +76,64 @@ internal class ProfileViewModel(
         authRepository.signOut()
     }
 
+    /**
+     * Immediately previews the gallery URI, then replaces it with the persistent Storage URL.
+     */
+    internal fun updateProfilePhoto(
+        localUri: String,
+        mimeType: String?,
+    ) {
+        val user =
+            currentUser ?: run {
+                _uiState.update { it.copy(errorMessageRes = R.string.error_user_profile_auth_required) }
+                return
+            }
+        if (_uiState.value.isUploadingPhoto) return
+
+        _uiState.update {
+            it.copy(
+                pendingPhotoUri = localUri,
+                isUploadingPhoto = true,
+                infoMessageRes = null,
+                errorMessageRes = null,
+            )
+        }
+
+        viewModelScope.launch {
+            when (
+                val result =
+                    userProfileRepository.updateProfilePhoto(
+                        userId = user.uid,
+                        localUri = localUri,
+                        mimeType = mimeType,
+                    )
+            ) {
+                is UserProfileOperationResult.Success -> {
+                    _uiState.update {
+                        it.copy(
+                            photoUrl = result.data,
+                            pendingPhotoUri = null,
+                            isUploadingPhoto = false,
+                            infoMessageRes = R.string.profile_photo_updated,
+                            errorMessageRes = null,
+                        )
+                    }
+                }
+
+                is UserProfileOperationResult.Error -> {
+                    _uiState.update {
+                        it.copy(
+                            pendingPhotoUri = null,
+                            isUploadingPhoto = false,
+                            infoMessageRes = null,
+                            errorMessageRes = result.messageRes,
+                        )
+                    }
+                }
+            }
+        }
+    }
+
     private fun observeProfile() {
         val user = currentUser ?: return
 
@@ -83,6 +146,7 @@ internal class ProfileViewModel(
                                 displayName = result.data.displayName,
                                 email = result.data.email,
                                 initials = result.data.displayName.toInitials(),
+                                photoUrl = result.data.photoUrl,
                                 role = result.data.role,
                                 teacherApprovalStatus = result.data.teacherApprovalStatus,
                                 isLoadingProfile = false,
