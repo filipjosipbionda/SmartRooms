@@ -346,7 +346,6 @@
     <string name="error_review_account_details">Please review your account details.</string>
     <string name="forgot_password_info">If this address exists, reset instructions will arrive shortly.</string>
     <string name="error_auth_invalid_credentials">Email or password is incorrect.</string>
-    <string name="error_auth_invalid_user">No account was found for this email.</string>
     <string name="error_auth_email_in_use">An account with this email already exists.</string>
     <string name="error_auth_weak_password">Choose a stronger password and try again.</string>
     <string name="error_auth_too_many_requests">Too many attempts. Try again later.</string>

@@ -98,8 +98,9 @@ private fun Throwable.toAuthErrorRes(): Int =
     when (this) {
         is FirebaseAuthUserCollisionException -> R.string.error_auth_email_in_use
         is FirebaseAuthWeakPasswordException -> R.string.error_auth_weak_password
-        is FirebaseAuthInvalidUserException -> R.string.error_auth_invalid_user
-        is FirebaseAuthInvalidCredentialsException -> R.string.error_auth_invalid_credentials
+        is FirebaseAuthInvalidUserException,
+        is FirebaseAuthInvalidCredentialsException,
+        -> R.string.error_auth_invalid_credentials
         is FirebaseTooManyRequestsException -> R.string.error_auth_too_many_requests
         is FirebaseNetworkException -> R.string.error_auth_network
         else -> R.string.error_auth_generic
