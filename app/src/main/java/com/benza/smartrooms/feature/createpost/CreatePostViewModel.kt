@@ -16,7 +16,6 @@ import com.benza.smartrooms.data.room.model.UpdateAnnouncementRequest
 import com.benza.smartrooms.data.room.repository.RoomRepository
 import com.benza.smartrooms.data.userprofile.model.UserProfile
 import com.benza.smartrooms.data.userprofile.model.UserProfileOperationResult
-import com.benza.smartrooms.data.userprofile.model.UserRole
 import com.benza.smartrooms.data.userprofile.repository.UserProfileRepository
 import com.benza.smartrooms.util.orPrettyEmailLocalPart
 import kotlinx.coroutines.Job
@@ -94,7 +93,6 @@ internal class CreatePostViewModel(
     private val currentUser = authRepository.getCurrentUser()
     private var originalRemoteAttachments: List<RoomAnnouncementAttachment> = emptyList()
     private var originalAnnouncement: RoomAnnouncement? = null
-    private var currentUserRole: UserRole? = null
     private var currentUserProfile: UserProfile? = null
     private var latestComments: List<RoomComment> = emptyList()
     private var latestCommentProfilesById: Map<String, UserProfile> = emptyMap()
@@ -571,22 +569,14 @@ internal class CreatePostViewModel(
 
         viewModelScope.launch {
             userProfileRepository.observeProfile(user).collect { result ->
-                currentUserRole =
-                    when (result) {
-                        is UserProfileOperationResult.Success -> {
-                            currentUserProfile = result.data
-                            result.data.role
-                        }
-                        is UserProfileOperationResult.Error -> null
+                when (result) {
+                    is UserProfileOperationResult.Success -> {
+                        currentUserProfile = result.data
                     }
-                val announcement = originalAnnouncement ?: return@collect
-                val canEdit = !viewOnly && canEditAnnouncement(announcement)
-                _uiState.update {
-                    it.copy(
-                        canEdit = canEdit,
-                        errorMessageRes = if (viewOnly || canEdit) null else R.string.error_post_edit_forbidden,
-                        errorMessageText = null,
-                    )
+
+                    is UserProfileOperationResult.Error -> {
+                        currentUserProfile = null
+                    }
                 }
             }
         }
@@ -631,8 +621,7 @@ internal class CreatePostViewModel(
         }
     }
 
-    private fun canEditAnnouncement(announcement: RoomAnnouncement): Boolean =
-        announcement.authorId == currentUser?.uid && currentUserRole == UserRole.TEACHER
+    private fun canEditAnnouncement(announcement: RoomAnnouncement): Boolean = announcement.authorId == currentUser?.uid
 }
 
 private const val MAX_ATTACHMENTS = 10

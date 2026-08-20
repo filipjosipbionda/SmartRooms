@@ -363,6 +363,12 @@
     <string name="error_announcement_not_found">The selected post could not be found.</string>
     <string name="error_comment_required">Comment cannot be empty.</string>
     <string name="error_post_edit_forbidden">You can only edit your own posts.</string>
+    <string name="attachment_download_description">Downloading post attachment</string>
+    <string name="attachment_download_action">Download %1$s</string>
+    <string name="attachment_download_started">Downloading %1$s</string>
+    <string name="attachment_download_failed">The attachment could not be downloaded.</string>
+    <string name="attachment_open_chooser_title">Open attachment with</string>
+    <string name="attachment_open_failed">No app is available to open this attachment.</string>
     <string name="error_room_invite_already_in_room">This user is already part of the room.</string>
     <string name="error_room_invite_owner_required">Only the room owner can invite users.</string>
     <string name="error_room_invite_target_not_found">Room or invited user was not found. If this started after updating the app, deploy the latest Cloud Functions.</string>

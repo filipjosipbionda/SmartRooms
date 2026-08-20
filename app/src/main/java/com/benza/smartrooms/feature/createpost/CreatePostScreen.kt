@@ -1,12 +1,17 @@
 package com.benza.smartrooms.feature.createpost
 
+import android.app.DownloadManager
 import android.content.ContentResolver
+import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.os.Environment
 import android.provider.OpenableColumns
 import android.text.format.Formatter
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -21,6 +26,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.Send
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.outlined.AttachFile
+import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material.icons.outlined.Folder
 import androidx.compose.material.icons.outlined.PhotoLibrary
 import androidx.compose.material3.Button
@@ -170,6 +176,12 @@ private fun CreatePostRouteContent(
         onPickFilesClick = { attachmentsPicker.launch(arrayOf("*/*")) },
         onPickPhotosClick = { mediaPicker.launch("image/*") },
         onRemoveAttachmentClick = viewModel::removeAttachment,
+        onOpenAttachmentClick = { attachment ->
+            context.openAttachment(attachment)
+        },
+        onDownloadAttachmentClick = { attachment ->
+            context.downloadAttachment(attachment)
+        },
         onSubmitClick = viewModel::submitPost,
         onDeleteClick = viewModel::deletePost,
         focusComments = focusComments,
@@ -188,6 +200,8 @@ internal fun CreatePostScreen(
     onPickFilesClick: () -> Unit,
     onPickPhotosClick: () -> Unit,
     onRemoveAttachmentClick: (String) -> Unit,
+    onOpenAttachmentClick: (CreatePostAttachmentUiState) -> Unit,
+    onDownloadAttachmentClick: (CreatePostAttachmentUiState) -> Unit,
     onSubmitClick: () -> Unit,
     onDeleteClick: () -> Unit,
     focusComments: Boolean,
@@ -385,7 +399,18 @@ internal fun CreatePostScreen(
                             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                                 uiState.attachments.forEach { attachment ->
                                     Surface(
-                                        modifier = Modifier.fillMaxWidth(),
+                                        modifier =
+                                            Modifier
+                                                .fillMaxWidth()
+                                                .then(
+                                                    if (isViewMode && !attachment.downloadUrl.isNullOrBlank()) {
+                                                        Modifier.clickable {
+                                                            onOpenAttachmentClick(attachment)
+                                                        }
+                                                    } else {
+                                                        Modifier
+                                                    },
+                                                ),
                                         shape = MaterialTheme.shapes.large,
                                         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.42f),
                                     ) {
@@ -422,7 +447,20 @@ internal fun CreatePostScreen(
                                                     maxLines = 1,
                                                 )
                                             }
-                                            if (!isViewMode) {
+                                            if (isViewMode && !attachment.downloadUrl.isNullOrBlank()) {
+                                                IconButton(
+                                                    onClick = { onDownloadAttachmentClick(attachment) },
+                                                ) {
+                                                    Icon(
+                                                        imageVector = Icons.Outlined.Download,
+                                                        contentDescription =
+                                                            stringResource(
+                                                                R.string.attachment_download_action,
+                                                                attachment.name,
+                                                            ),
+                                                    )
+                                                }
+                                            } else if (!isViewMode) {
                                                 IconButton(
                                                     onClick = { onRemoveAttachmentClick(attachment.id) },
                                                     enabled = isInputEnabled,
@@ -843,6 +881,71 @@ private fun buildAttachmentSelectionErrorMessage(
 }
 
 private fun Uri.readableAttachmentName(): String = lastPathSegment.orEmpty().ifBlank { "attachment" }
+
+private fun Context.openAttachment(attachment: CreatePostAttachmentUiState) {
+    val downloadUrl = attachment.downloadUrl
+    if (downloadUrl.isNullOrBlank()) {
+        Toast.makeText(this, R.string.attachment_open_failed, Toast.LENGTH_SHORT).show()
+        return
+    }
+
+    runCatching {
+        val viewIntent =
+            Intent(Intent.ACTION_VIEW).apply {
+                setDataAndType(Uri.parse(downloadUrl), attachment.mimeType)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+        val chooser =
+            Intent
+                .createChooser(viewIntent, getString(R.string.attachment_open_chooser_title))
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        startActivity(chooser)
+    }.onFailure {
+        Toast
+            .makeText(this, R.string.attachment_open_failed, Toast.LENGTH_SHORT)
+            .show()
+    }
+}
+
+private fun Context.downloadAttachment(attachment: CreatePostAttachmentUiState) {
+    val downloadUrl = attachment.downloadUrl
+    if (downloadUrl.isNullOrBlank()) {
+        Toast.makeText(this, R.string.attachment_download_failed, Toast.LENGTH_SHORT).show()
+        return
+    }
+
+    runCatching {
+        val fileName = attachment.name.toSafeDownloadFileName()
+        val request =
+            DownloadManager
+                .Request(Uri.parse(downloadUrl))
+                .setTitle(fileName)
+                .setDescription(getString(R.string.attachment_download_description))
+                .setMimeType(attachment.mimeType)
+                .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+                .setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, fileName)
+
+        val downloadManager = getSystemService(DownloadManager::class.java)
+        checkNotNull(downloadManager) { "Download service is unavailable" }
+        downloadManager.enqueue(request)
+    }.onSuccess {
+        Toast
+            .makeText(
+                this,
+                getString(R.string.attachment_download_started, attachment.name),
+                Toast.LENGTH_SHORT,
+            ).show()
+    }.onFailure {
+        Toast
+            .makeText(this, R.string.attachment_download_failed, Toast.LENGTH_SHORT)
+            .show()
+    }
+}
+
+private fun String.toSafeDownloadFileName(): String =
+    replace(Regex("[\\\\/:*?\"<>|]"), "_")
+        .trim()
+        .ifBlank { "attachment" }
 
 private fun Long.toCommentDateLabel(): String {
     if (this <= 0L) return "--"
