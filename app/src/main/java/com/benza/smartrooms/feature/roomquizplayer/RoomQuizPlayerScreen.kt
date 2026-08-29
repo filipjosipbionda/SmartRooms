@@ -1,6 +1,7 @@
 package com.benza.smartrooms.feature.roomquizplayer
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Arrangement
@@ -659,7 +660,6 @@ private fun MultipleChoiceQuestionCard(
             val isCorrectOption = question.correctOptionIndex == index
             val containerColor =
                 when {
-                    !isQuizCompleted && isSelected -> MaterialTheme.colorScheme.secondaryContainer
                     isQuizCompleted && isCorrectOption -> MaterialTheme.colorScheme.primaryContainer
                     isQuizCompleted && isSelected -> MaterialTheme.colorScheme.errorContainer
                     else -> MaterialTheme.colorScheme.surface
@@ -669,6 +669,12 @@ private fun MultipleChoiceQuestionCard(
                 onClick = { onOptionSelected(index) },
                 enabled = !isQuizCompleted && !isQuestionLocked,
                 modifier = Modifier.fillMaxWidth(),
+                border =
+                    if (!isQuizCompleted && isSelected) {
+                        BorderStroke(2.dp, MaterialTheme.colorScheme.primary)
+                    } else {
+                        BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
+                    },
             ) {
                 Surface(
                     modifier = Modifier.fillMaxWidth(),
