@@ -1,0 +1,29 @@
+rules_version = '2';
+
+service firebase.storage {
+  match /b/{bucket}/o {
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    // Profile images are readable to signed-in app users, but only their owner can upload,
+    // replace, or delete them.
+    match /users/{userId}/profile/{fileName} {
+      allow read: if isSignedIn();
+
+      allow create, update: if isSignedIn()
+        && request.auth.uid == userId
+        && request.resource.size <= 10 * 1024 * 1024
+        && request.resource.contentType.matches('image/.*');
+
+      allow delete: if isSignedIn() && request.auth.uid == userId;
+    }
+
+    // Preserve the existing room-attachment feature while requiring authentication.
+    // Room membership and professor permissions are additionally enforced by the app's
+    // Firestore/Cloud Functions flow.
+    match /rooms/{roomId}/announcements/{announcementId}/{fileName} {
+      allow read, write: if isSignedIn();
+    }
+  }
+}

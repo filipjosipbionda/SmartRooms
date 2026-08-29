@@ -1,0 +1,69 @@
+#!/bin/sh
+set -eu
+
+RELEVANT_PATTERN='(\.kt|\.kts)$|(^|/)\.editorconfig$|\.gradle\.kts$'
+
+staged_files="$(git diff --cached --name-only --diff-filter=ACMR | grep -E "$RELEVANT_PATTERN" || true)"
+if [ -z "$staged_files" ]; then
+    exit 0
+fi
+
+repo_root="$(git rev-parse --show-toplevel)"
+cd "$repo_root"
+
+before_snapshot="$(mktemp)"
+after_snapshot="$(mktemp)"
+trap 'rm -f "$before_snapshot" "$after_snapshot"' EXIT
+
+snapshot_files() {
+    git ls-files | grep -E "$RELEVANT_PATTERN" | while IFS= read -r file; do
+        [ -f "$file" ] || continue
+        printf '%s\t%s\n' "$(git hash-object "$file")" "$file"
+    done
+}
+
+snapshot_files > "$before_snapshot"
+
+echo "Running ktlintFormat and ktlintCheck..."
+./gradlew :app:ktlintFormat :app:ktlintCheck
+
+snapshot_files > "$after_snapshot"
+
+if ! cmp -s "$before_snapshot" "$after_snapshot"; then
+    echo
+    echo "ktlintFormat changed files. Review and re-stage them before committing:"
+    awk -F '\t' '
+        NR == FNR {
+            before[$2] = $1
+            next
+        }
+        before[$2] != $1 {
+            print $2
+        }
+        {
+            seen[$2] = 1
+        }
+        END {
+            for (path in before) {
+                if (!(path in seen)) {
+                    print path
+                }
+            }
+        }
+    ' "$before_snapshot" "$after_snapshot" | sort -u | sed 's/^/ - /'
+    exit 1
+fi
+
+staged_files_with_unstaged_changes="$(printf '%s\n' "$staged_files" | while IFS= read -r file; do
+    [ -n "$file" ] || continue
+    if ! git diff --quiet -- "$file"; then
+        printf '%s\n' "$file"
+    fi
+done)"
+
+if [ -n "$staged_files_with_unstaged_changes" ]; then
+    echo
+    echo "Some staged files have unstaged formatting changes. Re-stage them before committing:"
+    printf '%s\n' "$staged_files_with_unstaged_changes" | sort -u | sed 's/^/ - /'
+    exit 1
+fi
