@@ -53,8 +53,14 @@ internal class FirestoreRoomRepository(
         roomDataSource
             .observeRooms(ownerId)
             .map { RoomOperationResult.Success(it) as RoomOperationResult<List<Room>> }
-            .catch { emit(RoomOperationResult.Error(it.toRoomErrorRes(), it.toDebugMessage())) }
-            .flowOn(Dispatchers.IO)
+            .catch {
+                emit(
+                    RoomOperationResult.Error(
+                        it.toRoomErrorRes(),
+                        it.toDebugMessage(),
+                    ),
+                )
+            }.flowOn(Dispatchers.IO)
 
     /**
      * Streams rooms where the supplied user is listed as a member.
@@ -167,8 +173,14 @@ internal class FirestoreRoomRepository(
         roomDataSource
             .observeAnnouncements(roomId)
             .map { RoomOperationResult.Success(it) as RoomOperationResult<List<RoomAnnouncement>> }
-            .catch { emit(RoomOperationResult.Error(it.toRoomErrorRes(), it.toDebugMessage())) }
-            .flowOn(Dispatchers.IO)
+            .catch {
+                emit(
+                    RoomOperationResult.Error(
+                        it.toRoomErrorRes(),
+                        it.toDebugMessage(),
+                    ),
+                )
+            }.flowOn(Dispatchers.IO)
 
     override suspend fun getAnnouncement(
         roomId: String,
@@ -208,7 +220,12 @@ internal class FirestoreRoomRepository(
                 roomDataSource.createRoom(request)
             }.fold(
                 onSuccess = { RoomOperationResult.Success(Unit) },
-                onFailure = { RoomOperationResult.Error(it.toRoomErrorRes(), it.toDebugMessage()) },
+                onFailure = {
+                    RoomOperationResult.Error(
+                        it.toRoomErrorRes(),
+                        it.toDebugMessage(),
+                    )
+                },
             )
         }
 
@@ -343,7 +360,12 @@ internal class FirestoreRoomRepository(
                 functionsRoomDataSource.acceptRoomInvitation(invitationId)
             }.fold(
                 onSuccess = { RoomOperationResult.Success(Unit) },
-                onFailure = { RoomOperationResult.Error(it.toRoomInvitationResolveErrorRes(), it.toDebugMessage()) },
+                onFailure = {
+                    RoomOperationResult.Error(
+                        it.toRoomInvitationResolveErrorRes(),
+                        it.toDebugMessage(),
+                    )
+                },
             )
         }
 
